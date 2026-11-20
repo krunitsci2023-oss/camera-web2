@@ -1,0 +1,2149 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>เกมตอบคำถามอัจฉริยะ: ห่วงโซ่อาหาร ป.5 (AR Hand Tracking)</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts: Itim & Sriracha -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Itim&family=Sriracha&display=swap" rel="stylesheet">
+
+    <!-- MediaPipe Hands & Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #050816;
+            font-family: 'Itim', cursive, sans-serif;
+            color: #ffffff;
+        }
+
+        .font-sriracha {
+            font-family: 'Sriracha', cursive, sans-serif;
+        }
+
+        /* กรอบเรืองแสงสะท้อนสีรุ้งพลิ้วไหว (Rainbow Glassmorphism) */
+        .rainbow-border {
+            position: relative;
+            background: rgba(10, 18, 40, 0.72);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border-radius: 1.5rem;
+        }
+        .rainbow-border::before {
+            content: "";
+            position: absolute;
+            inset: -3px;
+            border-radius: inherit;
+            padding: 3px;
+            background: linear-gradient(
+                120deg,
+                #ff007f,
+                #ff8c00,
+                #ffe600,
+                #00ff88,
+                #00e5ff,
+                #a855f7,
+                #ff007f
+            );
+            background-size: 300% 300%;
+            animation: rainbowFlow 4.5s linear infinite;
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .rainbow-border > * {
+            position: relative;
+            z-index: 1;
+        }
+
+        @keyframes rainbowFlow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* หลอดเวลานับถอยหลังสีส้มสะท้อนแสงเรืองประกายออร่า */
+        .orange-aura-bar {
+            background: linear-gradient(90deg, #ff4500 0%, #ff7b00 50%, #ffb700 100%);
+            box-shadow: 0 0 18px #ff6a00, 0 0 36px rgba(255, 115, 0, 0.75);
+            transition: width 0.1s linear;
+        }
+
+        /* เคอร์เซอร์นีออนตามมือหลัก */
+        #neon-pointer {
+            position: fixed;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            border: 4px solid #00f5ff;
+            background: radial-gradient(circle, rgba(0, 245, 255, 0.7) 0%, rgba(0, 245, 255, 0.1) 65%, transparent 100%);
+            box-shadow: 0 0 20px #00f5ff, 0 0 40px #00f5ff, inset 0 0 12px #ffffff;
+            transition: width 0.12s ease, height 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+        }
+        #neon-pointer.pinching {
+            width: 34px;
+            height: 34px;
+            border-color: #ffe600;
+            background: radial-gradient(circle, rgba(255, 230, 0, 0.9) 0%, rgba(255, 140, 0, 0.3) 70%, transparent 100%);
+            box-shadow: 0 0 25px #ffe600, 0 0 50px #ff8800, inset 0 0 12px #ffffff;
+        }
+
+        /* การ์ดด่าน 2 (สีเขียวสว่างนีออนทึบแสง ตัวหนังสือหนาเตอะสีดำเข้มสนิท) */
+        .stage2-card {
+            background: linear-gradient(145deg, #39ff14, #00e676);
+            color: #000000;
+            border: 4px solid #ffffff;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6), 0 0 22px rgba(57, 255, 20, 0.75);
+            touch-action: none;
+            transition: transform 0.12s ease, box-shadow 0.15s ease;
+        }
+        .stage2-card.dragging {
+            transform: scale(1.08) rotate(-1.5deg);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.75), 0 0 40px #ffe600;
+            border-color: #ffe600;
+            z-index: 200 !important;
+        }
+
+        /* การ์ดด่าน 3 (สีเขียวเข้มทึบแสงเรืองรองนีออน โค้งมนสามมิติ) */
+        .stage3-falling-card {
+            background: linear-gradient(160deg, #065f46 0%, #064e3b 60%, #022c22 100%);
+            color: #ecfdf5;
+            border: 4px solid #34d399;
+            border-bottom: 10px solid #047857;
+            box-shadow: 0 14px 28px rgba(0, 0, 0, 0.7), 0 0 26px rgba(16, 185, 129, 0.85), inset 0 2px 8px rgba(167, 243, 208, 0.45);
+            text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+            border-radius: 1.75rem;
+            position: fixed;
+            z-index: 60;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        /* กล่องเป้าหมาย Drop Zone */
+        .drop-zone-box {
+            background: rgba(6, 18, 45, 0.78);
+            border: 4px dashed #00f5ff;
+            box-shadow: 0 0 22px rgba(0, 245, 255, 0.45), inset 0 0 18px rgba(0, 245, 255, 0.2);
+            transition: all 0.2s ease;
+        }
+        .drop-zone-box.active-hover {
+            background: rgba(0, 245, 255, 0.25);
+            border-color: #ffe600;
+            box-shadow: 0 0 35px rgba(255, 230, 0, 0.8), inset 0 0 24px rgba(255, 230, 0, 0.35);
+            transform: scale(1.03);
+        }
+
+        /* ปุ่มวงกลมนีออนทึบแสงด่าน 1 */
+        .stage1-btn-true {
+            background: radial-gradient(circle at 35% 30%, #4ade80, #16a34a 65%, #14532d 100%);
+            border: 6px solid #dcfce7;
+            box-shadow: 0 0 35px rgba(34, 197, 94, 0.9), 0 12px 30px rgba(0, 0, 0, 0.6);
+        }
+        .stage1-btn-false {
+            background: radial-gradient(circle at 35% 30%, #f87171, #dc2626 65%, #7f1d1d 100%);
+            border: 6px solid #fee2e2;
+            box-shadow: 0 0 35px rgba(239, 68, 68, 0.9), 0 12px 30px rgba(0, 0, 0, 0.6);
+        }
+
+        /* แอนิเมชันตัวเลขนับถอยหลังยักษ์ */
+        @keyframes popCountdown {
+            0% { transform: scale(0.3); opacity: 0; }
+            45% { transform: scale(1.25); opacity: 1; }
+            85% { transform: scale(1.0); opacity: 1; }
+            100% { transform: scale(1.4); opacity: 0; }
+        }
+        .countdown-pop {
+            animation: popCountdown 0.95s ease-out forwards;
+        }
+
+        @keyframes floatSlow {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+        }
+        .animate-float {
+            animation: floatSlow 2.6s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen overflow-hidden relative select-none">
+
+    <!-- วิดีโอเว็บแคมซ่อนไว้เพื่อป้อนเข้า MediaPipe -->
+    <video id="webcam-video" class="hidden" playsinline autoplay muted></video>
+
+    <!-- แคนวาสพื้นหลัง (วาดภาพกล้องแบบ Mirror 100% + โครงกระดูกมือ + อนุภาคพื้นหลังเมื่อใช้เมาส์) -->
+    <canvas id="ar-canvas" class="fixed inset-0 w-full h-full z-0 block"></canvas>
+
+    <!-- เลเยอร์โปร่งแสงบางๆ เพื่อเพิ่มความคมชัดของ UI -->
+    <div id="bg-dimmer" class="fixed inset-0 bg-slate-950/30 pointer-events-none z-10"></div>
+
+    <!-- เคอร์เซอร์นีออน (Glow Pointer) -->
+    <div id="neon-pointer" class="hidden"></div>
+
+    <!-- กล่องข้อความแจ้งเตือน (Toast Message) แทน alert() -->
+    <div id="toast-box" class="fixed top-20 left-1/2 -translate-x-1/2 z-[900] hidden px-6 py-3 rounded-2xl bg-slate-900/95 border-2 border-cyan-400 text-cyan-200 font-bold text-lg md:text-xl shadow-[0_0_25px_rgba(0,245,255,0.65)] text-center max-w-[90vw]"></div>
+
+    <!-- หน้าต่างแจ้งเตือนและช่วยแก้ปัญหากรณีเปิดกล้องไม่ได้ (เช่น ฝังใน Google Sites) -->
+    <div id="modal-camera-help" class="fixed inset-0 z-[950] hidden flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div class="rainbow-border max-w-xl w-full p-6 text-center flex flex-col items-center gap-4 shadow-2xl">
+            <div class="text-5xl">📷🚫</div>
+            <h3 class="font-sriracha text-2xl sm:text-3xl text-yellow-300">
+                เบราว์เซอร์บล็อกการเปิดกล้อง
+            </h3>
+            <p id="camera-help-reason" class="text-slate-100 text-sm sm:text-base leading-relaxed bg-slate-900/80 p-4 rounded-xl border border-cyan-500/40 text-left">
+                ระบบตรวจพบว่าเกมกำลังรันอยู่ในกรอบฝัง (เช่น Google Sites Embed) ซึ่ง Google Sites ปิดสิทธิ์การใช้กล้องไว้เพื่อความปลอดภัย
+            </p>
+            <div class="text-xs sm:text-sm text-emerald-200 bg-emerald-950/70 border border-emerald-400/50 rounded-xl p-3 text-left w-full">
+                <div class="font-bold text-emerald-300 mb-1">💡 วิธีทำให้ใช้กล้องได้ 100% บน Google Sites:</div>
+                1. นำไฟล์ <code class="text-yellow-300">.html</code> นี้ไปอัปโหลดฟรีบน <b>GitHub Pages</b> หรือ <b>Netlify Drop</b> เพื่อรับลิงก์เว็บ (HTTPS)<br>
+                2. บนหน้า Google Sites ให้สร้าง <b>"ปุ่ม (Button)"</b> ลิงก์ไปยังเว็บนั้น เพื่อให้เปิดเต็มจอในแท็บใหม่ (ใช้กล้องได้ทันที!)
+            </div>
+            <div class="flex flex-wrap justify-center gap-2.5 w-full pt-1">
+                <button onclick="openInNewTabForCamera()" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-500 text-slate-950 font-bold text-sm sm:text-base hover:scale-105 transition cursor-pointer">
+                    ↗️ เปิดเต็มจอในแท็บใหม่
+                </button>
+                <button onclick="retryCameraFromModal()" class="px-5 py-2.5 rounded-xl bg-slate-800 border-2 border-cyan-400 text-cyan-200 font-bold text-sm sm:text-base hover:bg-cyan-950/60 transition cursor-pointer">
+                    🔄 ลองเปิดกล้องอีกครั้ง
+                </button>
+                <button onclick="closeCameraHelpAndUseMouse()" class="px-5 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 border-2 border-purple-300 text-white font-bold text-sm sm:text-base transition cursor-pointer">
+                    🖱️ เล่นด้วยเมาส์ / ทัชสกรีนต่อ
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================
+         HEADER: แถบคะแนนรวม + ป้ายข้อ/ด่าน + โจทย์คำถาม
+         (อยู่ด้านบนสุดของหน้าจอเสมอ ไม่บังพื้นที่เล่น)
+    ========================================================== -->
+    <header id="game-header" class="fixed top-0 left-0 right-0 z-50 px-3 pt-2 pb-1 hidden pointer-events-none">
+        <div class="max-w-7xl mx-auto flex flex-col gap-2">
+            <!-- แถวบน: คะแนนรวม + ป้ายด่าน + โหมดควบคุม -->
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <!-- คะแนนรวม -->
+                <div class="flex items-center gap-2 pointer-events-auto">
+                    <div class="px-4 py-1 rounded-xl bg-emerald-950/85 border-2 border-emerald-400 text-emerald-300 font-bold text-sm md:text-base shadow-[0_0_14px_rgba(16,185,129,0.55)]">
+                        🏆 คะแนนรวม: <span id="score-val-total" class="text-white text-base md:text-xl">0</span>
+                    </div>
+                    <div class="px-3 py-1 rounded-xl bg-cyan-950/85 border-2 border-cyan-400 text-cyan-200 font-bold text-sm md:text-base shadow-[0_0_12px_rgba(0,245,255,0.4)]">
+                        ✅ ตอบถูก: <span id="correct-val-total" class="text-white">0</span>/<span id="total-q-count">9</span>
+                    </div>
+                </div>
+
+                <!-- ป้ายด่าน + โหมดควบคุม -->
+                <div class="flex items-center gap-2 pointer-events-auto">
+                    <div id="active-question-badge" class="px-4 py-1 rounded-full font-sriracha text-base md:text-lg font-bold border-2 border-white bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 shadow-[0_0_16px_rgba(0,245,255,0.6)]">
+                        ข้อที่ 1/9
+                    </div>
+                    <div id="stage-badge" class="px-3 py-1 rounded-full bg-purple-950/85 border border-purple-400 text-purple-200 font-bold text-xs md:text-sm">
+                        ด่านที่ 1
+                    </div>
+                    <div id="mode-badge-ingame" class="hidden sm:block px-3 py-1 rounded-full bg-slate-900/85 border border-cyan-400 text-cyan-300 font-bold text-xs">
+                        🖱️ โหมดเมาส์
+                    </div>
+                </div>
+            </div>
+
+            <!-- แถวโจทย์คำถามด้านบนสุด -->
+            <div id="question-board" class="rainbow-border px-4 py-2.5 md:px-6 md:py-3 text-center shadow-2xl">
+                <div id="question-subtag" class="text-xs md:text-sm text-cyan-300 font-bold tracking-wide mb-0.5">
+                    ด่านที่ 1: เล็งพอยน์เตอร์ค้างไว้ 0.8 วินาทีเพื่อตอบ
+                </div>
+                <h2 id="question-text" class="font-sriracha text-xl sm:text-2xl md:text-3xl text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] leading-snug">
+                    กำลังโหลดคำถาม...
+                </h2>
+            </div>
+        </div>
+    </header>
+
+    <!-- =========================================================
+         FOOTER: หลอดเวลานับถอยหลังสีส้มสะท้อนแสงเรืองประกายออร่า
+    ========================================================== -->
+    <footer id="game-footer" class="fixed bottom-0 left-0 right-0 z-50 px-4 pb-3 pt-1 hidden pointer-events-none">
+        <div class="max-w-5xl mx-auto">
+            <div class="flex items-center justify-between text-sm md:text-base font-bold mb-1 px-1">
+                <span class="text-orange-300 drop-shadow">⏱️ เวลาที่เหลือ (ตอบไวได้โบนัสสูงสุด +50 คะแนน!)</span>
+                <span id="timer-text" class="text-yellow-300 text-lg md:text-xl drop-shadow-[0_0_8px_#ff8800]">45.0 วินาที</span>
+            </div>
+            <div class="w-full h-5 md:h-6 rounded-full bg-slate-950/90 border-2 border-orange-400/80 p-0.5 overflow-hidden shadow-[0_0_15px_rgba(255,115,0,0.4)]">
+                <div id="timer-bar" class="orange-aura-bar h-full rounded-full" style="width: 100%;"></div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- =========================================================
+         หน้าจอที่ 1: START SCREEN (เลือกชุดคำถาม 1-3 ด้วยนิ้วหรือคลิก)
+    ========================================================== -->
+    <section id="screen-start" class="fixed inset-0 z-[100] flex items-center justify-center p-3 md:p-6 overflow-y-auto">
+        <div class="rainbow-border w-full max-w-4xl p-5 md:p-7 flex flex-col items-center gap-4 text-center shadow-2xl my-auto">
+            <!-- แถบสถานะกล้องบนหน้าแรก -->
+            <div class="w-full flex flex-wrap items-center justify-between gap-2">
+                <span class="px-3 py-1 rounded-full bg-fuchsia-950/80 border border-fuchsia-400 text-fuchsia-200 text-xs md:text-sm font-bold">
+                    🔬 วิทยาศาสตร์ ป.5 (สสวท.) • ห่วงโซ่อาหาร
+                </span>
+                <div class="flex items-center gap-2">
+                    <span id="mode-badge" class="px-3 py-1 rounded-full bg-slate-900/90 border border-cyan-400 text-cyan-300 text-xs md:text-sm font-bold">
+                        ⚡ พร้อมเริ่มเล่น
+                    </span>
+                    <button id="btn-enable-cam-preview" onclick="enableCameraOnStartScreen()" class="px-3 py-1 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs md:text-sm font-bold border border-emerald-200 cursor-pointer transition">
+                        📷 เปิดกล้อง (ชูนิ้วเลือกชุด / กำกำปั้นเริ่ม)
+                    </button>
+                </div>
+            </div>
+
+            <!-- ชื่อเกม -->
+            <div>
+                <h1 class="font-sriracha text-3xl sm:text-4xl md:text-5xl bg-gradient-to-r from-emerald-300 via-cyan-300 to-fuchsia-400 bg-clip-text text-transparent drop-shadow-[0_4px_12px_rgba(0,245,255,0.45)] leading-tight">
+                    ห่วงโซ่อาหาร AR Quiz!
+                </h1>
+                <p class="text-slate-200 text-sm sm:text-base md:text-lg mt-1">
+                    🔀 สุ่มสลับคำถามทุกครั้งที่เล่น • ข้อละ 45 วินาที • ตะลุยครบ 3 ด่านสุดมันส์!
+                </p>
+            </div>
+
+            <!-- เลือกชุดคำถาม 3 ชุดไม่ซ้ำกัน (ชู 1, 2, 3 นิ้ว หรือคลิก) -->
+            <div class="w-full bg-slate-900/80 border border-cyan-500/50 rounded-2xl p-3 md:p-4">
+                <div class="text-cyan-300 font-bold text-base md:text-lg mb-2">
+                    🖐️ ชู 1, 2, 3 นิ้วเลือกชุดคำถาม • ✊ กำกำปั้นค้าง 1 วิ เพื่อเริ่มเกมทันที!
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 md:gap-3">
+                    <button id="set-btn-0" onclick="selectQuestionSet(0)" class="relative py-3 px-3 rounded-xl font-bold text-base md:text-lg bg-emerald-500 text-slate-950 border-2 border-white shadow-[0_0_18px_#00ff88] transition cursor-pointer overflow-hidden">
+                        <div id="set-bar-0" class="absolute bottom-0 left-0 h-2 bg-yellow-300 transition-all duration-75" style="width: 0%"></div>
+                        ☝️ ชุดที่ 1 (ชู 1 นิ้ว)<br>
+                        <span class="text-xs md:text-sm font-normal">บทบาทผู้ผลิต & ผู้บริโภค</span>
+                    </button>
+                    <button id="set-btn-1" onclick="selectQuestionSet(1)" class="relative py-3 px-3 rounded-xl font-bold text-base md:text-lg bg-slate-800/90 text-slate-200 border-2 border-slate-600 hover:border-cyan-400 transition cursor-pointer overflow-hidden">
+                        <div id="set-bar-1" class="absolute bottom-0 left-0 h-2 bg-yellow-300 transition-all duration-75" style="width: 0%"></div>
+                        ✌️ ชุดที่ 2 (ชู 2 นิ้ว)<br>
+                        <span class="text-xs md:text-sm font-normal">ลำดับการกิน & สมดุล</span>
+                    </button>
+                    <button id="set-btn-2" onclick="selectQuestionSet(2)" class="relative py-3 px-3 rounded-xl font-bold text-base md:text-lg bg-slate-800/90 text-slate-200 border-2 border-slate-600 hover:border-cyan-400 transition cursor-pointer overflow-hidden">
+                        <div id="set-bar-2" class="absolute bottom-0 left-0 h-2 bg-yellow-300 transition-all duration-75" style="width: 0%"></div>
+                        🤟 ชุดที่ 3 (ชู 3 นิ้ว)<br>
+                        <span class="text-xs md:text-sm font-normal">การถ่ายทอดพลังงานในห่วงโซ่อาหาร</span>
+                    </button>
+                </div>
+                <div id="finger-select-status" class="text-xs md:text-sm text-yellow-300 font-bold mt-2">
+                    💡 กดปุ่ม "📷 เปิดกล้อง" ด้านบน เพื่อชูนิ้วเลือกชุดคำถาม และกำกำปั้น ✊ เริ่มเกมได้เลย!
+                </div>
+            </div>
+
+            <!-- สรุปกลไก 3 ด่าน -->
+            <div class="grid grid-cols-3 gap-2 w-full text-xs sm:text-sm">
+                <div class="bg-emerald-950/70 border border-emerald-400/50 rounded-xl p-2">
+                    <div class="font-bold text-emerald-300">ด่าน 1: ถูก-ผิด</div>
+                    <div class="text-slate-300">เล็งค้าง 0.8 วิ</div>
+                </div>
+                <div class="bg-cyan-950/70 border border-cyan-400/50 rounded-xl p-2">
+                    <div class="font-bold text-cyan-300">ด่าน 2: คีบวาง & เรียงโซ่</div>
+                    <div class="text-slate-300">ท่าคีบ 🤏 ลากวาง</div>
+                </div>
+                <div class="bg-purple-950/70 border border-purple-400/50 rounded-xl p-2">
+                    <div class="font-bold text-purple-300">ด่าน 3: ตะปบคำร่วง</div>
+                    <div class="text-slate-300">ปิดคะแนน ??? สุดลุ้น</div>
+                </div>
+            </div>
+
+            <!-- ปุ่มเริ่มเกม -->
+            <div class="flex flex-col sm:flex-row gap-3 w-full justify-center pt-1">
+                <button id="btn-start-cam" onclick="startGameWithCamera()" class="relative overflow-hidden px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-500 text-slate-950 font-bold text-xl md:text-2xl shadow-[0_0_25px_rgba(0,255,136,0.6)] hover:scale-105 active:scale-95 transition transform cursor-pointer">
+                    <div id="fist-start-bar" class="absolute bottom-0 left-0 h-2.5 bg-yellow-300 shadow-[0_0_12px_#ffe600] transition-all duration-75" style="width: 0%"></div>
+                    <span class="relative z-10">🚀 เริ่มเล่นเกม (ใช้กล้อง / กำกำปั้น ✊)</span>
+                </button>
+                <button onclick="startGameWithMouseFallback()" class="px-6 py-3.5 rounded-2xl bg-slate-800/95 border-2 border-purple-400 text-purple-200 font-bold text-lg md:text-xl hover:bg-purple-900/60 hover:scale-105 active:scale-95 transition transform cursor-pointer">
+                    🖱️ เล่นด้วยเมาส์ / ทัชสกรีน
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- =========================================================
+         หน้าจอที่ 2: INTERMISSION (เตรียมพร้อมก่อนเริ่มข้อ + ท่า 👌 OK)
+    ========================================================== -->
+    <section id="screen-intermission" class="fixed inset-0 z-[90] hidden flex items-center justify-center p-4">
+        <div class="rainbow-border w-full max-w-2xl p-6 md:p-8 flex flex-col items-center gap-4 text-center shadow-2xl">
+            <div id="intermission-set-tag" class="px-4 py-1 rounded-full bg-slate-900/90 border border-cyan-400 text-cyan-300 text-sm font-bold">
+                ชุดคำถามที่ 1 • สลับข้ออัตโนมัติ
+            </div>
+
+            <h2 class="text-xl md:text-2xl text-slate-200 font-bold">เตรียมตัวให้พร้อม! โจทย์ข้อต่อไป...</h2>
+
+            <div id="intermission-title-banner" class="font-sriracha text-3xl sm:text-4xl md:text-5xl px-8 py-3 rounded-2xl border-4 border-white bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-500 text-slate-950 shadow-[0_0_30px_rgba(0,245,255,0.75)] animate-float">
+                🎯 ข้อที่ 1 / 9
+            </div>
+
+            <p id="intermission-stage-info" class="text-base md:text-xl text-cyan-200 font-bold whitespace-pre-line">
+                ด่านที่ 1: คำถามถูก-ผิด • ข้อละ 45 วินาที
+            </p>
+
+            <!-- วงแหวนชาร์จพลังท่า 👌 OK -->
+            <div class="relative w-32 h-32 md:w-36 md:h-36 flex items-center justify-center my-1">
+                <svg class="w-full h-full -rotate-90" viewBox="0 0 120 120">
+                    <circle cx="60" cy="60" r="52" fill="rgba(15,23,42,0.75)" stroke="rgba(255,255,255,0.2)" stroke-width="10"></circle>
+                    <circle id="ok-progress-ring" cx="60" cy="60" r="52" fill="none" stroke="#00ff88" stroke-width="10" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7"></circle>
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span class="text-4xl md:text-5xl">👌</span>
+                    <span id="ok-status-text" class="text-xs font-bold text-emerald-300 mt-1">ทำท่า OK ค้าง 1 วิ</span>
+                </div>
+            </div>
+
+            <!-- ปุ่มกดยืนยันสำรอง (สำหรับเมาส์/ทัชสกรีน หรือกรณีแสงในห้องน้อย) -->
+            <button onclick="triggerReadyCountdown()" class="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-600 hover:from-cyan-300 hover:to-blue-500 border-2 border-white text-slate-950 font-bold text-lg md:text-xl shadow-[0_0_22px_rgba(34,211,238,0.65)] cursor-pointer transition transform hover:scale-105 active:scale-95">
+                ▶️ พร้อมแล้ว! เริ่มข้อนี้ทันที (คลิก / แตะ)
+            </button>
+        </div>
+    </section>
+
+    <!-- =========================================================
+         เลเยอร์นับถอยหลัง 3... 2... 1...
+    ========================================================== -->
+    <div id="screen-countdown" class="fixed inset-0 z-[120] hidden flex items-center justify-center pointer-events-none">
+        <div id="countdown-number" class="font-sriracha text-[10rem] md:text-[14rem] text-yellow-300 drop-shadow-[0_0_45px_rgba(255,200,0,0.95)]">
+            3
+        </div>
+    </div>
+
+    <!-- =========================================================
+         พื้นที่เล่น ด่านที่ 1: คำถาม ถูก-ผิด (วงกลมนีออนทึบแสงสุ่มตำแหน่ง)
+    ========================================================== -->
+    <div id="play-stage-1" class="fixed inset-0 z-40 hidden pointer-events-none">
+        <!-- ปุ่มถูก (✓) -->
+        <div id="s1-btn-true" class="stage1-btn-true fixed rounded-full w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 flex flex-col items-center justify-center pointer-events-auto cursor-pointer transition-transform">
+            <svg class="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 120 120">
+                <circle id="s1-ring-true" cx="60" cy="60" r="54" fill="none" stroke="#ffe600" stroke-width="8" stroke-linecap="round" stroke-dasharray="339.3" stroke-dashoffset="339.3"></circle>
+            </svg>
+            <span class="text-5xl sm:text-6xl md:text-7xl font-bold text-white drop-shadow">✓</span>
+            <span class="font-sriracha text-2xl sm:text-3xl text-white drop-shadow">ถูก</span>
+        </div>
+
+        <!-- ปุ่มผิด (✗) -->
+        <div id="s1-btn-false" class="stage1-btn-false fixed rounded-full w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 flex flex-col items-center justify-center pointer-events-auto cursor-pointer transition-transform">
+            <svg class="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 120 120">
+                <circle id="s1-ring-false" cx="60" cy="60" r="54" fill="none" stroke="#ffe600" stroke-width="8" stroke-linecap="round" stroke-dasharray="339.3" stroke-dashoffset="339.3"></circle>
+            </svg>
+            <span class="text-5xl sm:text-6xl md:text-7xl font-bold text-white drop-shadow">✗</span>
+            <span class="font-sriracha text-2xl sm:text-3xl text-white drop-shadow">ผิด</span>
+        </div>
+    </div>
+
+    <!-- =========================================================
+         พื้นที่เล่น ด่านที่ 2: คีบลากวาง (4 ตัวเลือก และ เรียงห่วงโซ่อาหาร)
+    ========================================================== -->
+    <div id="play-stage-2" class="fixed inset-0 z-40 hidden pointer-events-none">
+        <!-- โหมด 2A: กล่องเป้าหมายเดี่ยว (เลือกคำตอบ ก ข ค ง) -->
+        <div id="s2-single-drop-wrap" class="fixed top-44 sm:top-48 left-1/2 -translate-x-1/2 w-[90%] max-w-xl hidden">
+            <div id="s2-dropzone-single" class="drop-zone-box rounded-3xl p-4 sm:p-5 text-center pointer-events-auto">
+                <div class="text-cyan-300 font-sriracha text-xl sm:text-2xl">🎯 ลากการ์ดคำตอบมาวางที่นี่!</div>
+                <div class="text-slate-300 text-xs sm:text-sm mt-0.5">(ใช้ท่าคีบ 🤏 หรือคลิกลากการ์ดสีเขียวด้านล่าง)</div>
+            </div>
+        </div>
+
+        <!-- โหมด 2B: กล่องเป้าหมาย 3 ช่องเรียงลำดับห่วงโซ่อาหาร -->
+        <div id="s2-chain-drop-wrap" class="fixed top-44 sm:top-48 left-1/2 -translate-x-1/2 w-[95%] max-w-5xl hidden">
+            <div class="grid grid-cols-3 gap-2 sm:gap-4 items-center">
+                <div id="s2-chain-slot-0" data-slot="0" class="drop-zone-box rounded-2xl p-3 sm:p-4 text-center min-h-[96px] sm:min-h-[112px] flex flex-col items-center justify-center pointer-events-auto">
+                    <span class="text-emerald-300 font-bold text-sm sm:text-base">1. ผู้ผลิต 🌱</span>
+                    <span id="s2-slot-text-0" class="text-slate-300 text-xs sm:text-sm mt-1">วางลำดับที่ 1</span>
+                </div>
+                <div id="s2-chain-slot-1" data-slot="1" class="drop-zone-box rounded-2xl p-3 sm:p-4 text-center min-h-[96px] sm:min-h-[112px] flex flex-col items-center justify-center pointer-events-auto">
+                    <span class="text-yellow-300 font-bold text-sm sm:text-base">➔ 2. ผู้บริโภคอันดับ 1 🐛</span>
+                    <span id="s2-slot-text-1" class="text-slate-300 text-xs sm:text-sm mt-1">วางลำดับที่ 2</span>
+                </div>
+                <div id="s2-chain-slot-2" data-slot="2" class="drop-zone-box rounded-2xl p-3 sm:p-4 text-center min-h-[96px] sm:min-h-[112px] flex flex-col items-center justify-center pointer-events-auto">
+                    <span class="text-rose-300 font-bold text-sm sm:text-base">➔ 3. ผู้บริโภคอันดับ 2 🦅</span>
+                    <span id="s2-slot-text-2" class="text-slate-300 text-xs sm:text-sm mt-1">วางลำดับที่ 3</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- คอนเทนเนอร์การ์ดตัวเลือกที่ลากได้ -->
+        <div id="s2-cards-layer" class="fixed inset-0 pointer-events-none"></div>
+    </div>
+
+    <!-- =========================================================
+         พื้นที่เล่น ด่านที่ 3: ตะปบคำศัพท์หล่นจากฟ้า (คลีน โล่ง 100%)
+    ========================================================== -->
+    <div id="play-stage-3" class="fixed inset-0 z-40 hidden pointer-events-none overflow-hidden">
+        <!-- การ์ดคำศัพท์จะถูกสร้างแบบไดนามิกที่นี่ -->
+    </div>
+
+    <!-- =========================================================
+         หน้าจอเฉลยสั้นๆ หลังตอบแต่ละข้อ (Feedback Overlay)
+    ========================================================== -->
+    <div id="screen-feedback" class="fixed inset-0 z-[110] hidden flex items-center justify-center p-4 pointer-events-none">
+        <div id="feedback-card" class="rainbow-border max-w-xl w-full p-6 text-center shadow-2xl">
+            <div id="feedback-icon" class="text-6xl md:text-7xl mb-2">🎉</div>
+            <h3 id="feedback-title" class="font-sriracha text-3xl md:text-4xl text-emerald-300 mb-1">ถูกต้อง!</h3>
+            <p id="feedback-score-detail" class="text-xl md:text-2xl text-yellow-300 font-bold mb-2">+95 คะแนน (พื้นฐาน 50 + ความเร็ว 45)</p>
+            <p id="feedback-explain" class="text-base md:text-lg text-slate-100 bg-slate-900/75 rounded-xl p-3 border border-white/20">
+                คำอธิบายเพิ่มเติม...
+            </p>
+        </div>
+    </div>
+
+    <!-- =========================================================
+         หน้าจอก่อนประกาศผล: ปุ่ม "ดูผลการแข่งขัน 🏆"
+    ========================================================== -->
+    <section id="screen-pre-podium" class="fixed inset-0 z-[130] hidden flex items-center justify-center p-4">
+        <div class="rainbow-border max-w-2xl w-full p-8 text-center flex flex-col items-center gap-6 shadow-2xl">
+            <div class="text-7xl animate-bounce">🏆</div>
+            <h2 class="font-sriracha text-3xl sm:text-4xl md:text-5xl text-yellow-300 drop-shadow-[0_0_18px_rgba(255,215,0,0.7)]">
+                พิชิตภารกิจครบทุกข้อแล้ว!
+            </h2>
+            <p class="text-lg md:text-xl text-cyan-200">
+                พร้อมเปิดเผยคะแนนรวมทั้งหมด (รวมคะแนนลับ ??? จากด่านที่ 3) หรือยัง?!
+            </p>
+            <button onclick="revealPodium()" class="px-10 py-5 rounded-3xl bg-gradient-to-r from-yellow-400 via-orange-500 to-pink-500 text-slate-950 font-sriracha text-2xl sm:text-3xl font-bold border-4 border-white shadow-[0_0_35px_rgba(255,165,0,0.9)] hover:scale-105 active:scale-95 transition transform cursor-pointer">
+                ดูผลคะแนนรวม 🏆
+            </button>
+        </div>
+    </section>
+
+    <!-- =========================================================
+         หน้าจอสรุปผลคะแนนรวมปลายเกม
+    ========================================================== -->
+    <section id="screen-podium" class="fixed inset-0 z-[140] hidden flex items-center justify-center p-3 md:p-6 overflow-y-auto">
+        <div class="rainbow-border max-w-3xl w-full p-6 md:p-8 text-center flex flex-col items-center gap-5 shadow-2xl my-auto">
+            <h2 class="font-sriracha text-3xl sm:text-4xl md:text-5xl bg-gradient-to-r from-yellow-300 via-amber-400 to-pink-400 bg-clip-text text-transparent">
+                🎊 สรุปผลคะแนน ห่วงโซ่อาหาร ป.5 🎊
+            </h2>
+
+            <!-- การ์ดสรุปผลคะแนนรวม -->
+            <div class="w-full max-w-xl rounded-3xl bg-slate-900/85 border-4 border-yellow-300 p-6 flex flex-col items-center gap-3 shadow-[0_0_40px_rgba(250,204,21,0.55)]">
+                <div id="podium-stars" class="text-5xl sm:text-6xl tracking-widest">⭐⭐⭐</div>
+                <div id="podium-rank-title" class="font-sriracha text-2xl sm:text-3xl text-emerald-300">
+                    สุดยอดนักนิเวศวิทยา!
+                </div>
+                <div class="text-slate-300 text-base sm:text-lg">คะแนนรวมทั้งหมด</div>
+                <div id="podium-total-score" class="font-sriracha text-5xl sm:text-6xl text-yellow-300 drop-shadow-[0_0_18px_rgba(255,215,0,0.8)]">
+                    0 คะแนน
+                </div>
+                <div id="podium-correct-count" class="px-5 py-1.5 rounded-full bg-emerald-950/90 border border-emerald-400 text-emerald-200 font-bold text-lg sm:text-xl mt-1">
+                    ตอบถูก 0 จาก 9 ข้อ
+                </div>
+            </div>
+
+            <!-- ปุ่มเล่นใหม่ / สลับชุดคำถามถัดไป -->
+            <div class="flex flex-col sm:flex-row gap-3 pt-2">
+                <button onclick="nextSetAndRestart()" class="px-7 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-400 to-cyan-500 text-slate-950 font-bold text-lg md:text-xl shadow-[0_0_22px_rgba(0,255,136,0.6)] hover:scale-105 transition cursor-pointer">
+                    ⏭️ ท้าดวลชุดคำถามถัดไป!
+                </button>
+                <button onclick="restartGame()" class="px-7 py-3.5 rounded-2xl bg-slate-800 border-2 border-fuchsia-400 text-fuchsia-200 font-bold text-lg md:text-xl hover:bg-fuchsia-950/60 hover:scale-105 transition cursor-pointer">
+                    🔄 กลับหน้าหลัก (เล่นใหม่ & สลับข้อ)
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        /* =====================================================================
+           1. ระบบเสียงเอฟเฟกต์สังเคราะห์ (Web Audio API - ไม่ต้องใช้ไฟล์ภายนอก)
+        ===================================================================== */
+        const SoundFX = {
+            ctx: null,
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) this.ctx = new AudioCtx();
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume().catch(() => {});
+                }
+            },
+            playTone(freq, duration, type = 'sine', volume = 0.2, delay = 0) {
+                try {
+                    this.init();
+                    if (!this.ctx) return;
+                    const now = this.ctx.currentTime + delay;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, now);
+                    gain.gain.setValueAtTime(volume, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + duration);
+                } catch (e) {}
+            },
+            hoverTick() {
+                this.playTone(620, 0.06, 'sine', 0.12);
+            },
+            beep(isGo = false) {
+                if (isGo) {
+                    this.playTone(880, 0.25, 'triangle', 0.25);
+                } else {
+                    this.playTone(440, 0.14, 'sine', 0.2);
+                }
+            },
+            correct() {
+                this.playTone(523.25, 0.12, 'triangle', 0.22, 0);
+                this.playTone(659.25, 0.12, 'triangle', 0.22, 0.1);
+                this.playTone(783.99, 0.25, 'triangle', 0.25, 0.2);
+            },
+            wrong() {
+                this.playTone(260, 0.18, 'sawtooth', 0.18, 0);
+                this.playTone(190, 0.30, 'sawtooth', 0.18, 0.16);
+            },
+            fanfare() {
+                const notes = [
+                    { f: 523.25, d: 0.15, t: 0.00 },
+                    { f: 659.25, d: 0.15, t: 0.15 },
+                    { f: 783.99, d: 0.15, t: 0.30 },
+                    { f: 1046.5, d: 0.35, t: 0.45 },
+                    { f: 783.99, d: 0.15, t: 0.95 },
+                    { f: 1046.5, d: 0.70, t: 1.10 }
+                ];
+                notes.forEach(n => this.playTone(n.f, n.d, 'triangle', 0.24, n.t));
+            }
+        };
+
+        /* =====================================================================
+           2. คลังข้อคำถาม 3 ชุดไม่ซ้ำกัน (รวม 27 ข้อ)
+              วิชาวิทยาศาสตร์ ป.5 (สสวท.) เรื่อง "ห่วงโซ่อาหาร" เท่านั้น
+              เวลาจำกัดทุกข้อ: 45 วินาที
+        ===================================================================== */
+        const TIME_LIMIT = 45;
+
+        const QUESTION_SETS = [
+            // ================= ชุดที่ 1: บทบาทในห่วงโซ่อาหาร =================
+            [
+                // ด่าน 1 (ถูก-ผิด)
+                {
+                    stage: 1,
+                    time: TIME_LIMIT,
+                    question: "พืชสีเขียวจัดเป็น 'ผู้ผลิต' เพราะสามารถสร้างอาหารเองได้ด้วยกระบวนการสังเคราะห์ด้วยแสง",
+                    answer: true,
+                    explain: "ถูกต้อง! พืชสีเขียวใช้แสงแดด น้ำ และแก๊สคาร์บอนไดออกไซด์สร้างอาหารเองได้ จึงเป็นผู้ผลิตลำดับแรกของห่วงโซ่อาหาร"
+                },
+                {
+                    stage: 1,
+                    time: TIME_LIMIT,
+                    question: "ในแผนภาพห่วงโซ่อาหาร หัวลูกศร (➔) จะชี้จาก 'ผู้กิน' ไปหา 'ผู้ถูกกิน'",
+                    answer: false,
+                    explain: "ผิด! หัวลูกศร (➔) จะชี้จาก 'ผู้ถูกกิน' ไปหา 'ผู้กิน' เพื่อแสดงทิศทางการถ่ายทอดพลังงาน"
+                },
+                {
+                    stage: 1,
+                    time: TIME_LIMIT,
+                    question: "เห็ด รา และแบคทีเรีย ทำหน้าที่เป็น 'ผู้ย่อยสลายสารอินทรีย์' ในระบบนิเวศ",
+                    answer: true,
+                    explain: "ถูกต้อง! เห็ด รา และแบคทีเรียช่วยย่อยสลายซากพืชซากสัตว์ให้กลับเป็นธาตุอาหารในดิน"
+                },
+                // ด่าน 2 (คีบลากวาง + เรียงห่วงโซ่อาหาร)
+                {
+                    stage: 2,
+                    mode: "single",
+                    time: TIME_LIMIT,
+                    question: "จากห่วงโซ่อาหาร: ข้าวโพด ➔ ตั๊กแตน ➔ กบ ➔ งู สิ่งมีชีวิตใดเป็น 'ผู้บริโภคอันดับที่ 1'?",
+                    options: [
+                        { id: "ก", text: "ก. ข้าวโพด" },
+                        { id: "ข", text: "ข. ตั๊กแตน" },
+                        { id: "ค", text: "ค. กบ" },
+                        { id: "ง", text: "ง. งู" }
+                    ],
+                    correctId: "ข",
+                    explain: "ตั๊กแตนกินข้าวโพด (ผู้ผลิต) เป็นลำดับแรก จึงเป็นผู้บริโภคอันดับที่ 1"
+                },
+                {
+                    stage: 2,
+                    mode: "chain",
+                    time: TIME_LIMIT,
+                    question: "ลากสิ่งมีชีวิตมาเรียงให้เป็น 'ห่วงโซ่อาหารในทุ่งหญ้า' ที่ถูกต้อง!",
+                    items: [
+                        { id: "grass", text: "🌱 ต้นหญ้า", order: 0 },
+                        { id: "rabbit", text: "🐇 กระต่าย", order: 1 },
+                        { id: "eagle", text: "🦅 เหยี่ยว", order: 2 }
+                    ],
+                    explain: "ห่วงโซ่อาหารที่ถูกต้องคือ: ต้นหญ้า (ผู้ผลิต) ➔ กระต่าย (ผู้บริโภคอันดับ 1) ➔ เหยี่ยว (ผู้บริโภคอันดับ 2)"
+                },
+                {
+                    stage: 2,
+                    mode: "single",
+                    time: TIME_LIMIT,
+                    question: "สัตว์ในข้อใดจัดเป็น 'ผู้บริโภคทั้งพืชและสัตว์' ในห่วงโซ่อาหาร?",
+                    options: [
+                        { id: "ก", text: "ก. วัว" },
+                        { id: "ข", text: "ข. เสือโคร่ง" },
+                        { id: "ค", text: "ค. ไก่บ้าน" },
+                        { id: "ง", text: "ง. กระต่าย" }
+                    ],
+                    correctId: "ค",
+                    explain: "ไก่บ้านกินได้ทั้งเมล็ดพืช ข้าวเปลือก และแมลงตัวเล็กๆ จึงเป็นผู้บริโภคทั้งพืชและสัตว์"
+                },
+                // ด่าน 3 (ตะปบคำศัพท์หล่นจากฟ้า - ซ่อนคะแนน ???)
+                {
+                    stage: 3,
+                    time: TIME_LIMIT,
+                    question: "ตะปบคำที่เป็น 'ผู้ผลิต' ในห่วงโซ่อาหารในแหล่งน้ำ!",
+                    correctText: "🌿 สาหร่ายหางกระรอก",
+                    decoys: ["🐟 ปลาช่อน", "🦐 กุ้งฝอย", "🐸 กบนา", "🦅 นกกระยาง"],
+                    explain: "สาหร่ายหางกระรอกเป็นพืชน้ำที่สังเคราะห์ด้วยแสงได้ จึงเป็นผู้ผลิตในแหล่งน้ำ"
+                },
+                {
+                    stage: 3,
+                    time: TIME_LIMIT,
+                    question: "ตะปบคำที่เป็น 'ผู้บริโภคพืช' (กินพืชเป็นอาหารหลัก)!",
+                    correctText: "🦒 ยีราฟ",
+                    decoys: ["🦁 สิงโต", "🐍 งูเหลือม", "🐊 จระเข้", "🦈 ปลาฉลาม"],
+                    explain: "ยีราฟกินใบไม้และยอดไม้เป็นอาหาร จึงเป็นผู้บริโภคพืช"
+                },
+                {
+                    stage: 3,
+                    time: TIME_LIMIT,
+                    question: "ตะปบคำที่เป็น 'ผู้ย่อยสลายสารอินทรีย์'!",
+                    correctText: "🍄 เห็ดและรา",
+                    decoys: ["🌱 ต้นข้าว", "🐛 หนอนผีเสื้อ", "🦉 นกฮูก", "🐄 ควาย"],
+                    explain: "เห็ดและราหลั่งเอนไซม์ออกมาย่อยสลายซากสิ่งมีชีวิตให้เป็นสารอินทรีย์คืนสู่ธรรมชาติ"
+                }
+            ],
+
+            // ================= ชุดที่ 2: ลำดับการกิน & สมดุลห่วงโซ่อาหาร =================
+            [
+                // ด่าน 1 (ถูก-ผิด)
+                {
+                    stage: 1,
+                    time: TIME_LIMIT,
+                    question: "ห่วงโซ่อาหารทุกสายต้องเริ่มต้นด้วย 'ผู้ผลิต' เสมอ เช่น พืชสีเขียวหรือสาหร่าย",
+                    answer: true,
+                    explain: "ถูกต้อง! ผู้ผลิตเป็นจุดเริ่มต้นของห่วงโซ่อาหารทุกสาย เพราะสามารถสร้างอาหารเองได้จากแสงอาทิตย์"
+                },
+                {
+                    stage: 1,
+                    time: TIME_LIMIT,
+                    question: "หากผู้ผลิตในห่วงโซ่อาหารตายหมด ผู้บริโภคพืชและผู้บริโภคสัตว์จะยังคงอยู่รอดได้ตามปกติ",
+                    answer: false,
+                    explain: "ผิด! หากไม่มีผู้ผลิต ห่วงโซ่อาหารจะขาดแหล่งอาหารและพลังงานตั้งต้น ทำให้ผู้บริโภคลดลงและตายตามไปด้วย"
+                },
+                {
+                    stage: 1,
+                    time: TIME_LIMIT,
+                    question: "ในห่วงโซ่อาหาร: ต้นข้าว ➔ หนูนา ➔ งูเห่า หากงูเห่าลดลง หนูนาจะมีจำนวนเพิ่มขึ้น",
+                    answer: true,
+                    explain: "ถูกต้อง! เมื่อผู้ล่า (งูเห่า) ลดลง เหยื่อ (หนูนา) จะถูกล่าน้อยลงและขยายพันธุ์เพิ่มจำนวนขึ้นอย่างรวดเร็ว"
+                },
+                // ด่าน 2 (คีบลากวาง + เรียงห่วงโซ่อาหาร)
+                {
+                    stage: 2,
+                    mode: "single",
+                    time: TIME_LIMIT,
+                    question: "จากห่วงโซ่อาหาร: ผักบุ้ง ➔ หนอน ➔ นกกระจอก ➔ เหยี่ยว ใครคือ 'ผู้บริโภคอันดับสุดท้าย'?",
+                    options: [
+                        { id: "ก", text: "ก. ผักบุ้ง" },
+                        { id: "ข", text: "ข. หนอน" },
+                        { id: "ค", text: "ค. นกกระจอก" },
+                        { id: "ง", text: "ง. เหยี่ยว" }
+                    ],
+                    correctId: "ง",
+                    explain: "เหยี่ยวอยู่ในลำดับสุดท้ายของห่วงโซ่อาหารนี้ ไม่มีสิ่งมีชีวิตอื่นมากินต่อ จึงเป็นผู้บริโภคอันดับสุดท้าย"
+                },
+                {
+                    stage: 2,
+                    mode: "chain",
+                    time: TIME_LIMIT,
+                    question: "ลากสิ่งมีชีวิตมาเรียงให้เป็น 'ห่วงโซ่อาหารในนาข้าว' ที่ถูกต้อง!",
+                    items: [
+                        { id: "rice", text: "🌾 ต้นข้าว", order: 0 },
+                        { id: "mouse", text: "🐀 หนูนา", order: 1 },
+                        { id: "snake", text: "🐍 งูสิง", order: 2 }
+                    ],
+                    explain: "ห่วงโซ่อาหารในนาข้าวคือ: ต้นข้าว (ผู้ผลิต) ➔ หนูนา (ผู้บริโภคอันดับ 1) ➔ งูสิง (ผู้บริโภคอันดับ 2)"
+                },
+                {
+                    stage: 2,
+                    mode: "single",
+                    time: TIME_LIMIT,
+                    question: "จากห่วงโซ่อาหาร: หญ้า ➔ ม้าลาย ➔ สิงโต หากหญ้าแห้งตายหมด ผลกระทบแรกคือข้อใด?",
+                    options: [
+                        { id: "ก", text: "ก. ม้าลายขาดอาหารและลดลง" },
+                        { id: "ข", text: "ข. สิงโตมีจำนวนเพิ่มขึ้นมาก" },
+                        { id: "ค", text: "ค. ม้าลายเปลี่ยนมากินสิงโต" },
+                        { id: "ง", text: "ง. ไม่มีผลกระทบใดๆ" }
+                    ],
+                    correctId: "ก",
+                    explain: "ม้าลายกินหญ้าโดยตรง จึงได้รับผลกระทบเป็นลำดับแรกเมื่อหญ้าแห้งตาย"
+                },
+                // ด่าน 3 (ตะปบคำศัพท์หล่นจากฟ้า - ซ่อนคะแนน ???)
+                {
+                    stage: 3,
+                    time: TIME_LIMIT,
+                    question: "จากโซ่: ใบไม้ ➔ หนอน ➔ กบ ➔ งู ตะปบ 'ผู้บริโภคอันดับที่ 2'!",
+                    correctText: "🐸 กบ",
+                    decoys: ["🍃 ใบไม้", "🐛 หนอน", "🐍 งู", "🍄 เห็ด"],
+                    explain: "ใบไม้ (ผู้ผลิต) ➔ หนอน (อันดับ 1) ➔ กบ (อันดับ 2) ➔ งู (อันดับ 3)"
+                },
+                {
+                    stage: 3,
+                    time: TIME_LIMIT,
+                    question: "ตะปบสัตว์ที่เป็น 'ผู้บริโภคสัตว์' (กินเนื้อสัตว์เป็นอาหารหลัก)!",
+                    correctText: "🐅 เสือโคร่ง",
+                    decoys: ["🐘 ช้าง", "🦌 กวาง", "🐐 แพะ", "🐇 กระต่าย"],
+                    explain: "เสือโคร่งล่าสัตว์อื่นเป็นอาหาร จึงเป็นผู้บริโภคสัตว์"
+                },
+                {
+                    stage: 3,
+                    time: TIME_LIMIT,
+                    question: "ตะปบคำที่หมายถึง 'การกินต่อกันเป็นทอดๆ จากผู้ผลิตสู่ผู้บริโภค'!",
+                    correctText: "🔗 ห่วงโซ่อาหาร",
+                    decoys: ["☀️ ดวงอาทิตย์", "💧 แหล่งน้ำ", "🪨 ก้อนหิน", "🌬️ อากาศ"],
+                    explain: "ห่วงโซ่อาหาร (Food Chain) คือความสัมพันธ์ของการกินต่อกันเป็นทอดๆ จากผู้ผลิตไปยังผู้บริโภคลำดับต่างๆ"
+                }
+            ],
+
+            // ================= ชุดที่ 3: การถ่ายทอดพลังงานในห่วงโซ่อาหาร =================
+            [
+                // ด่าน 1 (ถูก-ผิด)
+                {
+                    stage: 1,
+                    time: TIME_LIMIT,
+                    question: "แหล่งพลังงานเริ่มต้นที่สำคัญที่สุดของห่วงโซ่อาหารบนโลกคือ 'ดวงอาทิตย์'",
+                    answer: true,
+                    explain: "ถูกต้อง! พืชรับพลังงานแสงจากดวงอาทิตย์มาสร้างอาหาร แล้วถ่ายทอดพลังงานต่อไปยังผู้บริโภคตามลำดับ"
+                },
+                {
+                    stage: 1,
+                    time: TIME_LIMIT,
+                    question: "ผู้บริโภคอันดับสุดท้ายจะได้รับพลังงานถ่ายทอด 'มากที่สุด' ในห่วงโซ่อาหาร",
+                    answer: false,
+                    explain: "ผิด! พลังงานจะลดลงเรื่อยๆ ในแต่ละขั้นของการกิน ผู้บริโภคอันดับสุดท้ายจึงได้รับพลังงานน้อยที่สุด"
+                },
+                {
+                    stage: 1,
+                    time: TIME_LIMIT,
+                    question: "แพลงก์ตอนพืชจัดเป็น 'ผู้ผลิต' ที่สำคัญของห่วงโซ่อาหารในทะเล",
+                    answer: true,
+                    explain: "ถูกต้อง! แพลงก์ตอนพืชสามารถสังเคราะห์ด้วยแสงได้ จึงเป็นจุดเริ่มต้นของห่วงโซ่อาหารในทะเล"
+                },
+                // ด่าน 2 (คีบลากวาง + เรียงห่วงโซ่อาหาร)
+                {
+                    stage: 2,
+                    mode: "single",
+                    time: TIME_LIMIT,
+                    question: "ในห่วงโซ่อาหาร: แครอท ➔ กระต่าย ➔ สุนัขจิ้งจอก ➔ เสือ ใครได้รับพลังงาน 'มากที่สุด'?",
+                    options: [
+                        { id: "ก", text: "ก. แครอท" },
+                        { id: "ข", text: "ข. กระต่าย" },
+                        { id: "ค", text: "ค. สุนัขจิ้งจอก" },
+                        { id: "ง", text: "ง. เสือ" }
+                    ],
+                    correctId: "ก",
+                    explain: "แครอทเป็นผู้ผลิตที่สร้างอาหารจากแสงอาทิตย์โดยตรง จึงมีพลังงานสะสมมากที่สุดในห่วงโซ่อาหาร"
+                },
+                {
+                    stage: 2,
+                    mode: "chain",
+                    time: TIME_LIMIT,
+                    question: "ลากสิ่งมีชีวิตมาเรียงให้เป็น 'ห่วงโซ่อาหารในทะเล' ที่ถูกต้อง!",
+                    items: [
+                        { id: "plankton", text: "🦠 แพลงก์ตอนพืช", order: 0 },
+                        { id: "mackerel", text: "🐟 ปลาทู", order: 1 },
+                        { id: "shark", text: "🦈 ปลาฉลาม", order: 2 }
+                    ],
+                    explain: "ห่วงโซ่อาหารในทะเลคือ: แพลงก์ตอนพืช (ผู้ผลิต) ➔ ปลาทู (ผู้บริโภคอันดับ 1) ➔ ปลาฉลาม (ผู้บริโภคอันดับ 2)"
+                },
+                {
+                    stage: 2,
+                    mode: "single",
+                    time: TIME_LIMIT,
+                    question: "สิ่งมีชีวิตใดช่วยย่อยซากสัตว์ที่ตายแล้วให้เป็นแร่ธาตุกลับคืนสู่ดินให้พืชใช้ต่อไป?",
+                    options: [
+                        { id: "ก", text: "ก. กวางป่า" },
+                        { id: "ข", text: "ข. แบคทีเรียและรา" },
+                        { id: "ค", text: "ค. นกอินทรี" },
+                        { id: "ง", text: "ง. ต้นมะม่วง" }
+                    ],
+                    correctId: "ข",
+                    explain: "แบคทีเรียและราเป็นผู้ย่อยสลายสารอินทรีย์ ช่วยหมุนเวียนแร่ธาตุกลับคืนสู่ดินให้ผู้ผลิตนำไปใช้"
+                },
+                // ด่าน 3 (ตะปบคำศัพท์หล่นจากฟ้า - ซ่อนคะแนน ???)
+                {
+                    stage: 3,
+                    time: TIME_LIMIT,
+                    question: "ตะปบ 'แหล่งพลังงานเริ่มต้น' ของทุกห่วงโซ่อาหาร!",
+                    correctText: "☀️ ดวงอาทิตย์",
+                    decoys: ["🌙 ดวงจันทร์", "💨 ลมพายุ", "🪨 ก้อนหิน", "❄️ หิมะ"],
+                    explain: "พลังงานแสงจากดวงอาทิตย์ถูกพืชเปลี่ยนเป็นพลังงานเคมีในอาหารและถ่ายทอดไปตามห่วงโซ่อาหาร"
+                },
+                {
+                    stage: 3,
+                    time: TIME_LIMIT,
+                    question: "จากโซ่: สาหร่าย ➔ ปลาเล็ก ➔ ปลาใหญ่ ➔ นกกระยาง ตะปบผู้ที่ได้พลังงาน 'น้อยที่สุด'!",
+                    correctText: "🦩 นกกระยาง",
+                    decoys: ["🌿 สาหร่าย", "🐟 ปลาเล็ก", "🐠 ปลาใหญ่", "☀️ ดวงอาทิตย์"],
+                    explain: "นกกระยางอยู่ปลายสุดของห่วงโซ่อาหาร พลังงานถูกใช้ไประหว่างทางมากที่สุด จึงได้รับพลังงานน้อยที่สุด"
+                },
+                {
+                    stage: 3,
+                    time: TIME_LIMIT,
+                    question: "ตะปบสิ่งมีชีวิตที่เป็น 'ผู้บริโภคทั้งพืชและสัตว์'!",
+                    correctText: "🐻 หมี",
+                    decoys: ["🐄 วัว", "🦓 ม้าลาย", "🐍 งูจงอาง", "🌱 ต้นไผ่"],
+                    explain: "หมีสามารถกินได้ทั้งผลไม้ น้ำผึ้ง ใบไม้ และจับปลากินเป็นอาหาร จึงเป็นผู้บริโภคทั้งพืชและสัตว์"
+                }
+            ]
+        ];
+
+        /* =====================================================================
+           3. สถานะหลักของเกม (Game State - แบบไม่แบ่งทีม + สลับคำถาม)
+        ===================================================================== */
+        const state = {
+            selectedSetIndex: 0,
+            phase: "START", // START, INTERMISSION, COUNTDOWN, PLAYING, FEEDBACK, PRE_PODIUM, PODIUM
+            currentQIndex: 0,
+            score: 0,
+            correctCount: 0,
+
+            // ระบบเวลา
+            timeLeft: TIME_LIMIT,
+            maxTime: TIME_LIMIT,
+            lastFrameTime: performance.now(),
+
+            // กล้อง & พิกัดมือ/เมาส์
+            useCamera: false,
+            cameraInitializing: false,
+            handVisible: false,
+            pointerX: window.innerWidth / 2,
+            pointerY: window.innerHeight / 2,
+            isPinching: false,
+            isOkGesture: false,
+            okHoldTime: 0,
+
+            // เลือกชุดคำถามด้วยการชูนิ้ว 1, 2, 3 และกำกำปั้นเริ่มเกม
+            extendedFingersCount: 0,
+            fingerHoldTarget: 0,
+            fingerHoldTime: 0,
+            isFistGesture: false,
+            fistHoldTime: 0,
+
+            // ด่าน 1 Hover Fill
+            s1HoverTarget: null, // 'true' | 'false' | null
+            s1HoverTime: 0,
+
+            // ด่าน 2 Drag & Drop (Delta Tracking)
+            s2Cards: [],
+            s2DraggingCard: null,
+            s2DragOffsetX: 0,
+            s2DragOffsetY: 0,
+            s2ChainSlots: [null, null, null],
+
+            // ด่าน 3 Falling Cards
+            s3FallingCards: [],
+            s3SpawnTimer: 0
+        };
+
+        // ฟังก์ชันสุ่มสลับลำดับคำถามแบบ Fisher-Yates Shuffle
+        function shuffleArray(arr) {
+            const copy = [...arr];
+            for (let i = copy.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [copy[i], copy[j]] = [copy[j], copy[i]];
+            }
+            return copy;
+        }
+
+        let QUIZ_DATA = shuffleArray(QUESTION_SETS[0]);
+        let handsDetector = null;
+        let latestLandmarks = null;
+        const videoEl = document.getElementById('webcam-video');
+        const canvasEl = document.getElementById('ar-canvas');
+        const ctx = canvasEl.getContext('2d');
+        const pointerEl = document.getElementById('neon-pointer');
+
+        // อนุภาคพื้นหลังสวยงาม (แสดงเมื่ออยู่ในโหมดเมาส์/ทัชสกรีน หรือก่อนเปิดกล้อง)
+        const bgParticles = Array.from({ length: 48 }, () => ({
+            x: Math.random() * window.innerWidth,
+            y: Math.random() * window.innerHeight,
+            r: Math.random() * 3 + 1.5,
+            vx: (Math.random() - 0.5) * 0.7,
+            vy: (Math.random() - 0.5) * 0.7,
+            hue: Math.random() * 360
+        }));
+
+        function resizeCanvas() {
+            canvasEl.width = window.innerWidth;
+            canvasEl.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function showToast(msg, duration = 2600) {
+            const box = document.getElementById('toast-box');
+            box.innerText = msg;
+            box.classList.remove('hidden');
+            clearTimeout(box._timer);
+            box._timer = setTimeout(() => {
+                box.classList.add('hidden');
+            }, duration);
+        }
+
+        /* =====================================================================
+           4. ระบบ MediaPipe Hands (Single Hand Tracking + Mirror 100%)
+              พร้อม Mouse / Touch Fallback อัตโนมัติ และตรวจจับ Google Sites Iframe
+        ===================================================================== */
+        function isRunningInIframe() {
+            try {
+                return window.self !== window.top;
+            } catch (e) {
+                return true;
+            }
+        }
+
+        function showCameraHelpModal(reasonText) {
+            const modal = document.getElementById('modal-camera-help');
+            const reasonEl = document.getElementById('camera-help-reason');
+            if (reasonEl && reasonText) reasonEl.innerText = reasonText;
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function closeCameraHelpAndUseMouse() {
+            const modal = document.getElementById('modal-camera-help');
+            if (modal) modal.classList.add('hidden');
+            enableMouseFallbackMode();
+            showToast("🖱️ สลับเป็นโหมดเมาส์ / ทัชสกรีนพร้อมเล่นแล้ว!", 2200);
+        }
+
+        function openInNewTabForCamera() {
+            try {
+                window.open(window.location.href, '_blank', 'noopener,noreferrer');
+            } catch (e) {
+                showToast("⚠️ ไม่สามารถเปิดแท็บใหม่ได้ กรุณานำไฟล์ .html ไปโฮสต์บน GitHub Pages / Netlify", 3500);
+            }
+        }
+
+        async function retryCameraFromModal() {
+            const modal = document.getElementById('modal-camera-help');
+            if (modal) modal.classList.add('hidden');
+            await initMediaPipeCamera(true);
+        }
+
+        async function requestWebcamStream() {
+            // พยายามเปิดกล้องแบบ HD ก่อน หากไม่รองรับให้ลดเหลือค่าเริ่มต้นอัตโนมัติ
+            try {
+                return await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+                    audio: false
+                });
+            } catch (e) {
+                if (e && (e.name === 'OverconstrainedError' || e.name === 'ConstraintNotSatisfiedError')) {
+                    return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                }
+                throw e;
+            }
+        }
+
+        async function initMediaPipeCamera(showHelpOnFail = true) {
+            if (state.useCamera || state.cameraInitializing) return state.useCamera;
+            state.cameraInitializing = true;
+
+            const badge = document.getElementById('mode-badge');
+            const badgeInGame = document.getElementById('mode-badge-ingame');
+
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("NO_MEDIA_DEVICES");
+                }
+                if (typeof Hands === 'undefined') {
+                    throw new Error("MEDIAPIPE_LOAD_FAIL");
+                }
+
+                badge.innerText = "⏳ กำลังเปิดกล้อง AI...";
+
+                // ขอสิทธิ์กล้องก่อนโหลดโมเดล AI เพื่อให้เบราว์เซอร์เด้งหน้าต่างขออนุญาตทันทีที่ผู้ใช้คลิก
+                const stream = await requestWebcamStream();
+
+                videoEl.setAttribute('playsinline', '');
+                videoEl.muted = true;
+                videoEl.srcObject = stream;
+                await videoEl.play();
+
+                handsDetector = new Hands({
+                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+                });
+
+                handsDetector.setOptions({
+                    maxNumHands: 1, // บังคับตรวจจับเพียง 1 มือหลักเท่านั้น
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.65,
+                    minTrackingConfidence: 0.6
+                });
+
+                handsDetector.onResults((results) => {
+                    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                        state.handVisible = true;
+                        latestLandmarks = results.multiHandLandmarks[0];
+                        processHandGesture(latestLandmarks);
+                    } else {
+                        state.handVisible = false;
+                        latestLandmarks = null;
+                        state.isOkGesture = false;
+                        state.isFistGesture = false;
+                        state.extendedFingersCount = 0;
+                        if (state.isPinching) {
+                            state.isPinching = false;
+                            handlePointerRelease();
+                        }
+                    }
+                });
+
+                state.useCamera = true;
+                state.cameraInitializing = false;
+
+                badge.innerText = "📷 โหมดกล้อง AI (มือหลัก)";
+                badge.className = "px-3 py-1 rounded-full bg-emerald-950/90 border border-emerald-400 text-emerald-300 text-xs md:text-sm font-bold";
+                badgeInGame.innerText = "📷 กล้อง AI";
+
+                const previewBtn = document.getElementById('btn-enable-cam-preview');
+                if (previewBtn) previewBtn.classList.add('hidden');
+
+                document.getElementById('finger-select-status').innerText =
+                    "✅ เปิดกล้องแล้ว! ชู 1-3 นิ้วเพื่อเลือกชุดคำถาม และกำกำปั้น ✊ ค้างไว้ 1 วินาทีเพื่อเริ่มเกมทันที!";
+
+                // ลูปส่งภาพเข้า MediaPipe อย่างปลอดภัย
+                async function detectLoop() {
+                    if (state.useCamera && videoEl.readyState >= 2 && handsDetector) {
+                        try {
+                            await handsDetector.send({ image: videoEl });
+                        } catch (err) {
+                            // ข้ามเฟรมที่มีปัญหาโดยไม่ทำให้ค้าง
+                        }
+                    }
+                    if (state.useCamera) {
+                        requestAnimationFrame(detectLoop);
+                    }
+                }
+                detectLoop();
+                return true;
+
+            } catch (err) {
+                console.warn("Camera Fallback:", err);
+                state.cameraInitializing = false;
+                enableMouseFallbackMode();
+
+                if (showHelpOnFail) {
+                    if (isRunningInIframe()) {
+                        showCameraHelpModal(
+                            "ตรวจพบว่าเกมกำลังถูกฝังในกรอบ Iframe (เช่น Google Sites Embed Code) ซึ่งระบบของ Google Sites บล็อกสิทธิ์การเข้าถึงกล้องเว็บแคมไว้ครับ"
+                        );
+                    } else if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
+                        showCameraHelpModal(
+                            "ยังไม่ได้อนุญาตสิทธิ์การใช้กล้อง กรุณากดที่ไอคอนรูปแม่กุญแจ/กล้องบริเวณแถบ URL ด้านบน แล้วเลือก 'อนุญาต (Allow)' จากนั้นกดลองใหม่อีกครั้งครับ"
+                        );
+                    } else if (err && err.message === 'NO_MEDIA_DEVICES') {
+                        showCameraHelpModal(
+                            "เบราว์เซอร์ไม่พบอุปกรณ์กล้อง หรือหน้าเว็บไม่ได้เปิดผ่านโปรโตคอลที่ปลอดภัย (HTTPS / localhost)"
+                        );
+                    } else {
+                        showToast("⚠️ ไม่สามารถเปิดกล้องได้ สลับเป็นโหมดเมาส์/ทัชสกรีนให้อัตโนมัติ!", 3200);
+                    }
+                }
+                return false;
+            }
+        }
+
+        function enableMouseFallbackMode() {
+            state.useCamera = false;
+            state.handVisible = false;
+            latestLandmarks = null;
+
+            const badge = document.getElementById('mode-badge');
+            const badgeInGame = document.getElementById('mode-badge-ingame');
+            badge.innerText = "🖱️ โหมดเมาส์ / ทัชสกรีน";
+            badge.className = "px-3 py-1 rounded-full bg-purple-950/90 border border-purple-400 text-purple-200 text-xs md:text-sm font-bold";
+            badgeInGame.innerText = "🖱️ โหมดเมาส์";
+        }
+
+        async function enableCameraOnStartScreen() {
+            SoundFX.init();
+            await initMediaPipeCamera();
+        }
+
+        // ประมวลผลท่าทางมือจากจุด Landmarks ทั้ง 21 จุด
+        function processHandGesture(lm) {
+            // Mirror พิกัดแกน X (1 - x) ให้ตรงกับภาพกระจก 100%
+            const indexTip = lm[8];
+            const thumbTip = lm[4];
+
+            const targetX = (1 - indexTip.x) * window.innerWidth;
+            const targetY = indexTip.y * window.innerHeight;
+
+            // Smooth Filter ลดการสั่นของเคอร์เซอร์
+            state.pointerX += (targetX - state.pointerX) * 0.45;
+            state.pointerY += (targetY - state.pointerY) * 0.45;
+
+            // ระยะระหว่างปลายนิ้วชี้ (8) กับปลายนิ้วโป้ง (4)
+            const pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+
+            // ตรวจนิ้วที่กางออก (ปลายนิ้วอยู่สูงกว่าข้อกลาง PIP)
+            const indexUp = lm[8].y < lm[6].y;
+            const middleUp = lm[12].y < lm[10].y;
+            const ringUp = lm[16].y < lm[14].y;
+            const pinkyUp = lm[20].y < lm[18].y;
+
+            // 1) ตรวจนับนิ้ว 1, 2, 3 สำหรับเลือกชุดคำถามบนหน้า Start Screen
+            let count = 0;
+            if (indexUp && !middleUp && !ringUp && !pinkyUp) count = 1;
+            else if (indexUp && middleUp && !ringUp && !pinkyUp) count = 2;
+            else if (indexUp && middleUp && ringUp && !pinkyUp) count = 3;
+            state.extendedFingersCount = count;
+
+            // 1.5) ตรวจท่ากำกำปั้น ✊ (นิ้วชี้ กลาง นาง ก้อย งอลงทั้งหมด)
+            state.isFistGesture = (!indexUp && !middleUp && !ringUp && !pinkyUp);
+
+            // 2) ตรวจท่า 👌 OK (นิ้วชี้กับนิ้วโป้งบีบชิดกัน และนิ้วกลาง+นาง+ก้อยกางออก)
+            state.isOkGesture = (pinchDist < 0.068) && middleUp && ringUp && pinkyUp;
+
+            // 3) ระบบ Hysteresis สำหรับท่าคีบ 🤏 (หนีบที่ < 0.055, ปล่อยที่ > 0.095)
+            if (!state.isPinching && pinchDist < 0.055) {
+                state.isPinching = true;
+                handlePointerPress();
+            } else if (state.isPinching && pinchDist > 0.095) {
+                state.isPinching = false;
+                handlePointerRelease();
+            }
+        }
+
+        // รองรับเมาส์และทัชสกรีนเต็มรูปแบบ (Mouse / Touch Fallback)
+        function updatePointerFromClient(x, y) {
+            if (!state.useCamera) {
+                state.pointerX = x;
+                state.pointerY = y;
+            }
+        }
+
+        window.addEventListener('mousemove', (e) => {
+            updatePointerFromClient(e.clientX, e.clientY);
+        });
+        window.addEventListener('mousedown', (e) => {
+            if (!state.useCamera) {
+                updatePointerFromClient(e.clientX, e.clientY);
+                state.isPinching = true;
+                handlePointerPress();
+            }
+        });
+        window.addEventListener('mouseup', () => {
+            if (!state.useCamera && state.isPinching) {
+                state.isPinching = false;
+                handlePointerRelease();
+            }
+        });
+
+        window.addEventListener('touchstart', (e) => {
+            if (!state.useCamera && e.touches.length > 0) {
+                const t = e.touches[0];
+                updatePointerFromClient(t.clientX, t.clientY);
+                state.isPinching = true;
+                handlePointerPress();
+            }
+        }, { passive: true });
+        window.addEventListener('touchmove', (e) => {
+            if (!state.useCamera && e.touches.length > 0) {
+                const t = e.touches[0];
+                updatePointerFromClient(t.clientX, t.clientY);
+            }
+        }, { passive: true });
+        window.addEventListener('touchend', () => {
+            if (!state.useCamera && state.isPinching) {
+                state.isPinching = false;
+                handlePointerRelease();
+            }
+        });
+
+        /* =====================================================================
+           5. การเลือกชุดคำถามและการเริ่มเกม (สุ่มสลับคำถามทุกครั้งที่เริ่ม)
+        ===================================================================== */
+        function selectQuestionSet(index) {
+            SoundFX.hoverTick();
+            state.selectedSetIndex = index;
+            QUIZ_DATA = shuffleArray(QUESTION_SETS[index]);
+
+            for (let i = 0; i < 3; i++) {
+                const btn = document.getElementById(`set-btn-${i}`);
+                if (!btn) continue;
+                if (i === index) {
+                    btn.className = "relative py-3 px-3 rounded-xl font-bold text-base md:text-lg bg-emerald-500 text-slate-950 border-2 border-white shadow-[0_0_18px_#00ff88] transition cursor-pointer overflow-hidden";
+                } else {
+                    btn.className = "relative py-3 px-3 rounded-xl font-bold text-base md:text-lg bg-slate-800/90 text-slate-200 border-2 border-slate-600 hover:border-cyan-400 transition cursor-pointer overflow-hidden";
+                }
+            }
+        }
+
+        function resetMatchData() {
+            state.currentQIndex = 0;
+            state.score = 0;
+            state.correctCount = 0;
+            // สุ่มสลับลำดับคำถามใหม่ทุกครั้งที่เริ่มเกม
+            QUIZ_DATA = shuffleArray(QUESTION_SETS[state.selectedSetIndex]);
+            document.getElementById('total-q-count').innerText = QUIZ_DATA.length;
+            updateScoreUI(false);
+        }
+
+        async function startGameWithCamera() {
+            SoundFX.init();
+            const camOk = await initMediaPipeCamera(true);
+            if (!camOk && isRunningInIframe()) {
+                // หากถูกบล็อกใน Google Sites ให้แสดงหน้าต่างแนะนำก่อน โดยผู้ใช้กด "เล่นด้วยเมาส์ต่อ" ได้ทันที
+                return;
+            }
+            resetMatchData();
+            enterIntermission();
+        }
+
+        function startGameWithMouseFallback() {
+            SoundFX.init();
+            enableMouseFallbackMode();
+            resetMatchData();
+            enterIntermission();
+        }
+
+        function restartGame() {
+            SoundFX.hoverTick();
+            state.phase = "START";
+            hideAllScreens();
+            document.getElementById('screen-start').classList.remove('hidden');
+            pointerEl.classList.add('hidden');
+        }
+
+        function nextSetAndRestart() {
+            const nextIdx = (state.selectedSetIndex + 1) % QUESTION_SETS.length;
+            selectQuestionSet(nextIdx);
+            resetMatchData();
+            enterIntermission();
+        }
+
+        function hideAllScreens() {
+            const ids = [
+                'screen-start', 'screen-intermission', 'screen-countdown',
+                'screen-feedback', 'screen-pre-podium', 'screen-podium',
+                'game-header', 'game-footer',
+                'play-stage-1', 'play-stage-2', 'play-stage-3'
+            ];
+            ids.forEach(id => document.getElementById(id).classList.add('hidden'));
+        }
+
+        /* =====================================================================
+           6. หน้าคั่นระหว่างข้อ (Intermission + ท่า 👌 OK + นับถอยหลัง 3..2..1)
+        ===================================================================== */
+        function enterIntermission() {
+            state.phase = "INTERMISSION";
+            state.okHoldTime = 0;
+            hideAllScreens();
+
+            const q = QUIZ_DATA[state.currentQIndex];
+
+            document.getElementById('intermission-set-tag').innerText =
+                `ชุดคำถามที่ ${state.selectedSetIndex + 1} • สุ่มสลับคำถาม`;
+
+            const bannerEl = document.getElementById('intermission-title-banner');
+            bannerEl.innerText = `🎯 ข้อที่ ${state.currentQIndex + 1} / ${QUIZ_DATA.length}`;
+
+            const stageDesc = {
+                1: "ด่านที่ 1: คำถามถูก-ผิด\n(เล็งค้าง 0.8 วินาที • 45 วินาที)",
+                2: q.mode === "chain"
+                    ? "ด่านที่ 2: คีบลากเรียงห่วงโซ่อาหาร 3 ขั้น\n(ท่าคีบ 🤏 หรือคลิกลาก • 45 วินาที)"
+                    : "ด่านที่ 2: คีบลากวางตัวเลือกคำตอบ\n(ท่าคีบ 🤏 หรือคลิกลาก • 45 วินาที)",
+                3: "ด่านที่ 3: ตะปบคำศัพท์หล่นจากฟ้า\n(คะแนนลับ ??? • 45 วินาที)"
+            };
+
+            document.getElementById('intermission-stage-info').innerText = stageDesc[q.stage];
+            document.getElementById('ok-progress-ring').style.strokeDashoffset = 326.7;
+            document.getElementById('ok-status-text').innerText = state.useCamera ? "ทำท่า OK ค้าง 1 วิ" : "คลิกปุ่มด้านล่าง";
+
+            document.getElementById('screen-intermission').classList.remove('hidden');
+            pointerEl.classList.remove('hidden');
+        }
+
+        function triggerReadyCountdown() {
+            if (state.phase !== "INTERMISSION") return;
+            state.phase = "COUNTDOWN";
+            document.getElementById('screen-intermission').classList.add('hidden');
+            document.getElementById('screen-countdown').classList.remove('hidden');
+
+            const numEl = document.getElementById('countdown-number');
+            let count = 3;
+
+            function step() {
+                if (state.phase !== "COUNTDOWN") return;
+                if (count > 0) {
+                    SoundFX.beep(false);
+                    numEl.innerText = count;
+                    numEl.classList.remove('countdown-pop');
+                    void numEl.offsetWidth;
+                    numEl.classList.add('countdown-pop');
+                    count--;
+                    setTimeout(step, 900);
+                } else {
+                    SoundFX.beep(true);
+                    document.getElementById('screen-countdown').classList.add('hidden');
+                    startQuestion();
+                }
+            }
+            step();
+        }
+
+        /* =====================================================================
+           7. เริ่มข้อคำถาม & จัดวางกลไกทั้ง 3 ด่าน
+        ===================================================================== */
+        function updateScoreUI(hideWithMystery) {
+            document.getElementById('score-val-total').innerText = hideWithMystery ? "???" : state.score;
+            document.getElementById('correct-val-total').innerText = state.correctCount;
+        }
+
+        function startQuestion() {
+            state.phase = "PLAYING";
+            const q = QUIZ_DATA[state.currentQIndex];
+
+            state.maxTime = q.time || TIME_LIMIT;
+            state.timeLeft = state.maxTime;
+            state.lastFrameTime = performance.now();
+
+            // อัปเดต Header & Footer
+            document.getElementById('game-header').classList.remove('hidden');
+            document.getElementById('game-footer').classList.remove('hidden');
+
+            // ด่าน 3 ปิดบังคะแนนด้วย ???
+            updateScoreUI(q.stage === 3);
+
+            document.getElementById('active-question-badge').innerText = `ข้อที่ ${state.currentQIndex + 1}/${QUIZ_DATA.length}`;
+            document.getElementById('stage-badge').innerText = `ด่านที่ ${q.stage}`;
+            document.getElementById('question-text').innerText = q.question;
+
+            const subtags = {
+                1: "ด่านที่ 1: เล็งพอยน์เตอร์ไปค้างบนวงกลมคำตอบครบ 0.8 วินาที",
+                2: q.mode === "chain"
+                    ? "ด่านที่ 2: คีบ 🤏 (หรือคลิกลาก) สิ่งมีชีวิตไปเรียงให้ครบทั้ง 3 ช่องด้านบน"
+                    : "ด่านที่ 2: คีบ 🤏 (หรือคลิกลาก) การ์ดคำตอบสีเขียวไปปล่อยในกล่องด้านบน",
+                3: "ด่านที่ 3: โบกมือปัดหรือแตะการ์ดคำตอบที่ถูกต้องซึ่งกำลังร่วงลงมาจากฟ้า! (คะแนนถูกซ่อน ???)"
+            };
+            document.getElementById('question-subtag').innerText = subtags[q.stage];
+
+            // ซ่อนพื้นที่เล่นของด่านอื่นก่อน
+            document.getElementById('play-stage-1').classList.add('hidden');
+            document.getElementById('play-stage-2').classList.add('hidden');
+            document.getElementById('play-stage-3').classList.add('hidden');
+
+            if (q.stage === 1) setupStage1();
+            else if (q.stage === 2) setupStage2(q);
+            else if (q.stage === 3) setupStage3(q);
+        }
+
+        // ---------------- ด่านที่ 1: ถูก-ผิด (สุ่มตำแหน่งและสลับฝั่งอิสระทุกข้อ) ----------------
+        function setupStage1() {
+            state.s1HoverTarget = null;
+            state.s1HoverTime = 0;
+            document.getElementById('s1-ring-true').style.strokeDashoffset = 339.3;
+            document.getElementById('s1-ring-false').style.strokeDashoffset = 339.3;
+
+            const wrap = document.getElementById('play-stage-1');
+            wrap.classList.remove('hidden');
+
+            const btnTrue = document.getElementById('s1-btn-true');
+            const btnFalse = document.getElementById('s1-btn-false');
+
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const btnSize = w < 640 ? 160 : (w < 768 ? 192 : 224);
+
+            // สุ่มสลับฝั่งซ้าย-ขวา และสุ่มความสูงในพื้นที่ปลอดภัย (ไม่ทับโจทย์ด้านบนและหลอดเวลาด้านล่าง)
+            const swapSides = Math.random() < 0.5;
+            const minY = Math.max(210, h * 0.30);
+            const maxY = Math.max(minY + 30, h - btnSize - 95);
+
+            const leftX = Math.max(20, w * (0.12 + Math.random() * 0.14));
+            const rightX = Math.min(w - btnSize - 20, w * (0.56 + Math.random() * 0.14));
+
+            const y1 = minY + Math.random() * (maxY - minY);
+            const y2 = minY + Math.random() * (maxY - minY);
+
+            if (swapSides) {
+                btnTrue.style.left = `${rightX}px`;
+                btnTrue.style.top = `${y1}px`;
+                btnFalse.style.left = `${leftX}px`;
+                btnFalse.style.top = `${y2}px`;
+            } else {
+                btnTrue.style.left = `${leftX}px`;
+                btnTrue.style.top = `${y1}px`;
+                btnFalse.style.left = `${rightX}px`;
+                btnFalse.style.top = `${y2}px`;
+            }
+        }
+
+        // ---------------- ด่านที่ 2: คีบลากวาง (4 ตัวเลือก & เรียงห่วงโซ่อาหาร) ----------------
+        function setupStage2(q) {
+            const wrap = document.getElementById('play-stage-2');
+            wrap.classList.remove('hidden');
+
+            const singleWrap = document.getElementById('s2-single-drop-wrap');
+            const chainWrap = document.getElementById('s2-chain-drop-wrap');
+            const cardsLayer = document.getElementById('s2-cards-layer');
+            cardsLayer.innerHTML = '';
+
+            state.s2Cards = [];
+            state.s2DraggingCard = null;
+            state.s2ChainSlots = [null, null, null];
+
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+
+            if (q.mode === "single") {
+                singleWrap.classList.remove('hidden');
+                chainWrap.classList.add('hidden');
+
+                // จัดวางการ์ด 4 ใบ (ก, ข, ค, ง) ด้านล่างอย่างสมดุล
+                const cols = w < 640 ? 2 : 4;
+                const cardW = w < 640 ? Math.min(168, (w - 40) / 2) : Math.min(230, (w - 80) / 4);
+                const cardH = w < 640 ? 84 : 104;
+                const startY = h - (w < 640 ? 265 : 195);
+
+                q.options.forEach((opt, idx) => {
+                    const col = idx % cols;
+                    const row = Math.floor(idx / cols);
+                    const totalRowW = cols * cardW + (cols - 1) * 16;
+                    const startX = (w - totalRowW) / 2;
+                    const x = startX + col * (cardW + 16);
+                    const y = startY + row * (cardH + 14);
+
+                    const el = document.createElement('div');
+                    el.className = "stage2-card fixed rounded-2xl px-3 py-2 flex items-center justify-center text-center font-extrabold text-xl sm:text-2xl md:text-3xl pointer-events-auto cursor-grab";
+                    el.style.width = `${cardW}px`;
+                    el.style.height = `${cardH}px`;
+                    el.style.left = `${x}px`;
+                    el.style.top = `${y}px`;
+                    el.innerText = opt.text;
+                    cardsLayer.appendChild(el);
+
+                    state.s2Cards.push({
+                        el,
+                        id: opt.id,
+                        text: opt.text,
+                        x, y, homeX: x, homeY: y,
+                        w: cardW, h: cardH
+                    });
+                });
+            } else {
+                // โหมดเรียงห่วงโซ่อาหาร 3 ช่อง
+                singleWrap.classList.add('hidden');
+                chainWrap.classList.remove('hidden');
+
+                for (let s = 0; s < 3; s++) {
+                    document.getElementById(`s2-slot-text-${s}`).innerText = `วางลำดับที่ ${s + 1}`;
+                    document.getElementById(`s2-chain-slot-${s}`).classList.remove('border-emerald-400', 'bg-emerald-900/50');
+                }
+
+                // สับตำแหน่งสิ่งมีชีวิตไม่ให้เรียงลำดับเดิม
+                const shuffled = [...q.items].sort(() => Math.random() - 0.5);
+                if (shuffled[0].order === 0 && shuffled[1].order === 1) {
+                    shuffled.reverse();
+                }
+
+                const cardW = w < 640 ? Math.min(180, (w - 36) / 3) : Math.min(250, (w - 90) / 3);
+                const cardH = w < 640 ? 92 : 110;
+                const totalW = 3 * cardW + 2 * 18;
+                const startX = (w - totalW) / 2;
+                const startY = h - 205;
+
+                shuffled.forEach((item, idx) => {
+                    const x = startX + idx * (cardW + 18);
+                    const y = startY;
+
+                    const el = document.createElement('div');
+                    el.className = "stage2-card fixed rounded-2xl px-3 py-2 flex items-center justify-center text-center font-extrabold text-xl sm:text-2xl md:text-3xl pointer-events-auto cursor-grab";
+                    el.style.width = `${cardW}px`;
+                    el.style.height = `${cardH}px`;
+                    el.style.left = `${x}px`;
+                    el.style.top = `${y}px`;
+                    el.innerText = item.text;
+                    cardsLayer.appendChild(el);
+
+                    state.s2Cards.push({
+                        el,
+                        id: item.id,
+                        order: item.order,
+                        text: item.text,
+                        placedSlot: -1,
+                        x, y, homeX: x, homeY: y,
+                        w: cardW, h: cardH
+                    });
+                });
+            }
+        }
+
+        // ---------------- ด่านที่ 3: ตะปบคำศัพท์หล่นจากฟ้า (คลีน โล่ง 100%) ----------------
+        function setupStage3(q) {
+            const wrap = document.getElementById('play-stage-3');
+            wrap.innerHTML = '';
+            wrap.classList.remove('hidden');
+            state.s3FallingCards = [];
+            state.s3SpawnTimer = 0;
+
+            // ปล่อยการ์ดชุดแรกทันที 3 ใบ (มีคำตอบที่ถูกต้องอย่างน้อย 1 ใบ)
+            spawnStage3Card(q, true, 0.20);
+            spawnStage3Card(q, false, 0.50);
+            spawnStage3Card(q, false, 0.80);
+        }
+
+        function spawnStage3Card(q, forceCorrect = false, laneRatio = null) {
+            const wrap = document.getElementById('play-stage-3');
+            const isCorrect = forceCorrect || (Math.random() < 0.36);
+            const text = isCorrect
+                ? q.correctText
+                : q.decoys[Math.floor(Math.random() * q.decoys.length)];
+
+            const el = document.createElement('div');
+            el.className = "stage3-falling-card px-6 py-4 font-sriracha text-2xl sm:text-3xl md:text-4xl whitespace-nowrap";
+            el.innerText = text;
+            wrap.appendChild(el);
+
+            const rect = el.getBoundingClientRect();
+            const cardW = rect.width || 240;
+            const margin = 24;
+            const maxX = Math.max(margin, window.innerWidth - cardW - margin);
+            const x = laneRatio !== null
+                ? Math.min(maxX, Math.max(margin, window.innerWidth * laneRatio - cardW / 2))
+                : margin + Math.random() * (maxX - margin);
+
+            const y = 130; // เริ่มร่วงลงมาจากใต้แถบโจทย์ด้านบนสุด
+            const speed = 115 + Math.random() * 85; // px ต่อวินาที
+
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+
+            // รองรับการคลิก/แตะโดยตรงเผื่อโหมดเมาส์
+            el.addEventListener('pointerdown', () => {
+                if (state.phase === "PLAYING" && q.stage === 3) {
+                    submitAnswer(isCorrect);
+                }
+            });
+
+            state.s3FallingCards.push({
+                el,
+                isCorrect,
+                x, y,
+                w: cardW,
+                h: rect.height || 80,
+                speed
+            });
+        }
+
+        /* =====================================================================
+           8. การควบคุมการคีบ/จับ และปล่อยการ์ด (Delta Tracking สำหรับด่าน 2)
+        ===================================================================== */
+        function handlePointerPress() {
+            if (state.phase !== "PLAYING") return;
+            const q = QUIZ_DATA[state.currentQIndex];
+
+            // ด่าน 2: ตรวจจับการคีบ/คลิกการ์ดตัวเลือก
+            if (q.stage === 2 && !state.s2DraggingCard) {
+                for (let i = state.s2Cards.length - 1; i >= 0; i--) {
+                    const c = state.s2Cards[i];
+                    if (
+                        state.pointerX >= c.x - 12 &&
+                        state.pointerX <= c.x + c.w + 12 &&
+                        state.pointerY >= c.y - 12 &&
+                        state.pointerY <= c.y + c.h + 12
+                    ) {
+                        state.s2DraggingCard = c;
+                        // Delta Tracking: จำระยะห่างจากมุมซ้ายบนของการ์ดจุดเริ่มจับ
+                        state.s2DragOffsetX = state.pointerX - c.x;
+                        state.s2DragOffsetY = state.pointerY - c.y;
+                        c.el.classList.add('dragging');
+                        SoundFX.hoverTick();
+
+                        // ถ้าการ์ดเคยวางอยู่ในช่องเรียงลำดับ ให้ถอดออกจากช่องนั้นก่อน
+                        if (q.mode === "chain" && c.placedSlot !== -1) {
+                            state.s2ChainSlots[c.placedSlot] = null;
+                            document.getElementById(`s2-slot-text-${c.placedSlot}`).innerText = `วางลำดับที่ ${c.placedSlot + 1}`;
+                            document.getElementById(`s2-chain-slot-${c.placedSlot}`).classList.remove('border-emerald-400', 'bg-emerald-900/50');
+                            c.placedSlot = -1;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        function handlePointerRelease() {
+            if (state.phase !== "PLAYING") return;
+            const q = QUIZ_DATA[state.currentQIndex];
+
+            if (q.stage === 2 && state.s2DraggingCard) {
+                const c = state.s2DraggingCard;
+                c.el.classList.remove('dragging');
+                state.s2DraggingCard = null;
+
+                const cx = c.x + c.w / 2;
+                const cy = c.y + c.h / 2;
+
+                if (q.mode === "single") {
+                    const dz = document.getElementById('s2-dropzone-single');
+                    dz.classList.remove('active-hover');
+                    const rect = dz.getBoundingClientRect();
+                    const over = cx >= rect.left - 25 && cx <= rect.right + 25 && cy >= rect.top - 25 && cy <= rect.bottom + 25;
+
+                    if (over) {
+                        submitAnswer(c.id === q.correctId);
+                    } else {
+                        // ดีดกลับตำแหน่งเดิม
+                        c.x = c.homeX;
+                        c.y = c.homeY;
+                        c.el.style.left = `${c.x}px`;
+                        c.el.style.top = `${c.y}px`;
+                    }
+                } else if (q.mode === "chain") {
+                    let droppedSlot = -1;
+                    for (let s = 0; s < 3; s++) {
+                        const slotEl = document.getElementById(`s2-chain-slot-${s}`);
+                        slotEl.classList.remove('active-hover');
+                        const rect = slotEl.getBoundingClientRect();
+                        if (cx >= rect.left - 20 && cx <= rect.right + 20 && cy >= rect.top - 20 && cy <= rect.bottom + 20) {
+                            droppedSlot = s;
+                            break;
+                        }
+                    }
+
+                    if (droppedSlot !== -1) {
+                        // ถ้ามีใบอื่นอยู่ในช่องนั้นอยู่แล้ว ให้ดีดใบเก่ากลับบ้าน
+                        const prevCard = state.s2ChainSlots[droppedSlot];
+                        if (prevCard && prevCard !== c) {
+                            prevCard.placedSlot = -1;
+                            prevCard.x = prevCard.homeX;
+                            prevCard.y = prevCard.homeY;
+                            prevCard.el.style.left = `${prevCard.x}px`;
+                            prevCard.el.style.top = `${prevCard.y}px`;
+                            prevCard.el.style.opacity = '1';
+                        }
+
+                        // วางการ์ดลงช่องเป้าหมาย
+                        const slotRect = document.getElementById(`s2-chain-slot-${droppedSlot}`).getBoundingClientRect();
+                        c.placedSlot = droppedSlot;
+                        state.s2ChainSlots[droppedSlot] = c;
+                        c.x = slotRect.left + (slotRect.width - c.w) / 2;
+                        c.y = slotRect.top + (slotRect.height - c.h) / 2;
+                        c.el.style.left = `${c.x}px`;
+                        c.el.style.top = `${c.y}px`;
+
+                        document.getElementById(`s2-slot-text-${droppedSlot}`).innerText = c.text;
+                        document.getElementById(`s2-chain-slot-${droppedSlot}`).classList.add('border-emerald-400', 'bg-emerald-900/50');
+                        SoundFX.hoverTick();
+
+                        // หากวางครบทั้ง 3 ช่องแล้ว ให้ตรวจคำตอบทันที
+                        if (state.s2ChainSlots[0] && state.s2ChainSlots[1] && state.s2ChainSlots[2]) {
+                            const isChainCorrect =
+                                state.s2ChainSlots[0].order === 0 &&
+                                state.s2ChainSlots[1].order === 1 &&
+                                state.s2ChainSlots[2].order === 2;
+                            submitAnswer(isChainCorrect);
+                        }
+                    } else {
+                        c.x = c.homeX;
+                        c.y = c.homeY;
+                        c.el.style.left = `${c.x}px`;
+                        c.el.style.top = `${c.y}px`;
+                    }
+                }
+            }
+        }
+
+        /* =====================================================================
+           9. การตรวจคำตอบ, คำนวณ Speed Bonus และเปลี่ยนข้อถัดไป
+        ===================================================================== */
+        function submitAnswer(isCorrect, isTimeout = false) {
+            if (state.phase !== "PLAYING") return;
+            state.phase = "FEEDBACK";
+            state.s2DraggingCard = null;
+
+            const q = QUIZ_DATA[state.currentQIndex];
+            let earned = 0;
+            let speedBonus = 0;
+
+            if (isCorrect) {
+                SoundFX.correct();
+                const ratio = Math.max(0, Math.min(1, state.timeLeft / state.maxTime));
+                speedBonus = Math.round(50 * ratio);
+                earned = 50 + speedBonus;
+                state.score += earned;
+                state.correctCount++;
+            } else {
+                SoundFX.wrong();
+            }
+
+            updateScoreUI(q.stage === 3);
+
+            // แสดงผลเฉลย
+            document.getElementById('feedback-icon').innerText = isCorrect ? "🎉" : (isTimeout ? "⏰" : "💥");
+            const titleEl = document.getElementById('feedback-title');
+            titleEl.innerText = isCorrect ? "ถูกต้อง! เก่งมาก!" : (isTimeout ? "หมดเวลาแล้ว!" : "ยังไม่ถูกต้องนะ!");
+            titleEl.className = isCorrect
+                ? "font-sriracha text-3xl md:text-4xl text-emerald-300 mb-1"
+                : "font-sriracha text-3xl md:text-4xl text-rose-400 mb-1";
+
+            const scoreDetail = document.getElementById('feedback-score-detail');
+            if (isCorrect) {
+                scoreDetail.innerText = q.stage === 3
+                    ? "🔒 เก็บคะแนนลับเข้ากระเป๋าเรียบร้อย! (ลุ้นตอนจบเกม)"
+                    : `+${earned} คะแนน (พื้นฐาน 50 + โบนัสความเร็ว ${speedBonus})`;
+            } else {
+                scoreDetail.innerText = "+0 คะแนน สู้ต่อไปนะ!";
+            }
+
+            document.getElementById('feedback-explain').innerText = q.explain;
+            document.getElementById('screen-feedback').classList.remove('hidden');
+
+            setTimeout(() => {
+                if (state.phase !== "FEEDBACK") return;
+                document.getElementById('screen-feedback').classList.add('hidden');
+                advanceTurn();
+            }, 3000);
+        }
+
+        function advanceTurn() {
+            state.currentQIndex++;
+
+            if (state.currentQIndex >= QUIZ_DATA.length) {
+                // จบครบทุกข้อ -> ไปหน้าจอลุ้นเปิดผลคะแนนรวม
+                state.phase = "PRE_PODIUM";
+                hideAllScreens();
+                pointerEl.classList.add('hidden');
+                document.getElementById('screen-pre-podium').classList.remove('hidden');
+            } else {
+                enterIntermission();
+            }
+        }
+
+        function revealPodium() {
+            SoundFX.fanfare();
+            state.phase = "PODIUM";
+            document.getElementById('screen-pre-podium').classList.add('hidden');
+            document.getElementById('screen-podium').classList.remove('hidden');
+
+            const total = QUIZ_DATA.length;
+            const accuracy = total > 0 ? state.correctCount / total : 0;
+
+            let stars = "⭐";
+            let rankTitle = "นักสำรวจห่วงโซ่อาหารมือใหม่!";
+            if (accuracy >= 0.8) {
+                stars = "⭐⭐⭐";
+                rankTitle = "สุดยอดปรมาจารย์ห่วงโซ่อาหาร!";
+            } else if (accuracy >= 0.5) {
+                stars = "⭐⭐";
+                rankTitle = "นักนิเวศวิทยาตัวจริงเสียงจริง!";
+            }
+
+            document.getElementById('podium-stars').innerText = stars;
+            document.getElementById('podium-rank-title').innerText = rankTitle;
+            document.getElementById('podium-total-score').innerText = `${state.score} คะแนน`;
+            document.getElementById('podium-correct-count').innerText = `ตอบถูก ${state.correctCount} จาก ${total} ข้อ`;
+        }
+
+        /* =====================================================================
+           10. ลูปหลักของเกม (Render Canvas Mirror + Update Logic 60 FPS)
+        ===================================================================== */
+        function mainLoop(now) {
+            const dt = Math.min(0.1, (now - state.lastFrameTime) / 1000);
+            state.lastFrameTime = now;
+
+            // 1) วาดพื้นหลังแคนวาส (กล้อง Mirror 100% หรือ พื้นหลังนีออน)
+            ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+            if (state.useCamera && videoEl.readyState >= 2) {
+                ctx.save();
+                ctx.translate(canvasEl.width, 0);
+                ctx.scale(-1, 1);
+
+                // วาดแบบ Object-Fit: Cover เพื่อไม่ให้ภาพบิดเบี้ยว
+                const vw = videoEl.videoWidth || 1280;
+                const vh = videoEl.videoHeight || 720;
+                const scale = Math.max(canvasEl.width / vw, canvasEl.height / vh);
+                const drawW = vw * scale;
+                const drawH = vh * scale;
+                const dx = (canvasEl.width - drawW) / 2;
+                const dy = (canvasEl.height - drawH) / 2;
+                ctx.drawImage(videoEl, dx, dy, drawW, drawH);
+                ctx.restore();
+
+                // วาดจุด Landmarks มือแบบนีออนบางๆ (Mirror ตรงกับวิดีโอ)
+                if (latestLandmarks) {
+                    ctx.save();
+                    ctx.fillStyle = "rgba(0, 245, 255, 0.75)";
+                    for (const pt of latestLandmarks) {
+                        const lx = (1 - pt.x) * canvasEl.width;
+                        const ly = pt.y * canvasEl.height;
+                        ctx.beginPath();
+                        ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                }
+            } else {
+                // พื้นหลังไฮเทคนีออนเคลื่อนไหวเมื่อใช้เมาส์/ทัชสกรีน
+                const grad = ctx.createLinearGradient(0, 0, canvasEl.width, canvasEl.height);
+                grad.addColorStop(0, "#050816");
+                grad.addColorStop(0.5, "#0d1638");
+                grad.addColorStop(1, "#1a0b2e");
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+                for (const p of bgParticles) {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    if (p.x < 0) p.x = canvasEl.width;
+                    if (p.x > canvasEl.width) p.x = 0;
+                    if (p.y < 0) p.y = canvasEl.height;
+                    if (p.y > canvasEl.height) p.y = 0;
+
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                    ctx.fillStyle = `hsla(${p.hue}, 100%, 65%, 0.55)`;
+                    ctx.fill();
+                }
+            }
+
+            // 2) อัปเดตตำแหน่งเคอร์เซอร์นีออน (Glow Pointer)
+            if (state.phase === "INTERMISSION" || state.phase === "PLAYING") {
+                pointerEl.classList.remove('hidden');
+                pointerEl.style.left = `${state.pointerX}px`;
+                pointerEl.style.top = `${state.pointerY}px`;
+                pointerEl.classList.toggle('pinching', state.isPinching);
+            } else {
+                pointerEl.classList.add('hidden');
+            }
+
+            // 3) อัปเดตลอจิกตามสถานะปัจจุบันของเกม
+            if (state.phase === "START" && state.useCamera) {
+                updateStartFingerSelection(dt);
+            } else if (state.phase === "INTERMISSION") {
+                updateIntermissionOK(dt);
+            } else if (state.phase === "PLAYING") {
+                updatePlayingLogic(dt);
+            }
+
+            requestAnimationFrame(mainLoop);
+        }
+
+        // ชู 1, 2, 3 นิ้วค้างไว้ 0.8 วินาที เพื่อเลือกชุดคำถาม และกำกำปั้น ✊ ค้างไว้ 1 วินาที เพื่อเริ่มเกมทันที
+        function updateStartFingerSelection(dt) {
+            const count = state.extendedFingersCount;
+            const fistBar = document.getElementById('fist-start-bar');
+            const statusEl = document.getElementById('finger-select-status');
+
+            // ตรวจท่ากำกำปั้น ✊ เพื่อเริ่มเกมทันที
+            if (state.isFistGesture) {
+                state.fistHoldTime += dt;
+                state.fingerHoldTarget = 0;
+                state.fingerHoldTime = 0;
+                for (let i = 0; i < 3; i++) {
+                    document.getElementById(`set-bar-${i}`).style.width = '0%';
+                }
+
+                const pct = Math.min(100, (state.fistHoldTime / 1.0) * 100);
+                if (fistBar) fistBar.style.width = `${pct}%`;
+                if (statusEl) {
+                    statusEl.innerText = `✊ กำลังชาร์จพลังกำปั้นเพื่อเริ่มชุดที่ ${state.selectedSetIndex + 1}... ${Math.round(pct)}%`;
+                }
+
+                if (state.fistHoldTime >= 1.0) {
+                    state.fistHoldTime = 0;
+                    if (fistBar) fistBar.style.width = '0%';
+                    SoundFX.beep(true);
+                    resetMatchData();
+                    enterIntermission();
+                }
+                return;
+            } else {
+                state.fistHoldTime = Math.max(0, state.fistHoldTime - dt * 2);
+                if (fistBar) fistBar.style.width = `${(state.fistHoldTime / 1.0) * 100}%`;
+            }
+
+            if (count >= 1 && count <= 3) {
+                if (state.fingerHoldTarget === count) {
+                    state.fingerHoldTime += dt;
+                } else {
+                    state.fingerHoldTarget = count;
+                    state.fingerHoldTime = 0;
+                }
+                const pct = Math.min(100, (state.fingerHoldTime / 0.8) * 100);
+                for (let i = 0; i < 3; i++) {
+                    document.getElementById(`set-bar-${i}`).style.width = (i === count - 1) ? `${pct}%` : '0%';
+                }
+                if (state.fingerHoldTime >= 0.8) {
+                    selectQuestionSet(count - 1);
+                    state.fingerHoldTime = 0;
+                    state.fingerHoldTarget = 0;
+                    showToast(`✅ เลือกชุดคำถามที่ ${count} แล้ว! กำกำปั้น ✊ ค้าง 1 วิ เพื่อเริ่มได้เลย`, 2400);
+                }
+            } else {
+                state.fingerHoldTarget = 0;
+                state.fingerHoldTime = 0;
+                for (let i = 0; i < 3; i++) {
+                    document.getElementById(`set-bar-${i}`).style.width = '0%';
+                }
+            }
+        }
+
+        // ชาร์จเกจท่า 👌 OK ค้างไว้ 1 วินาทีบนหน้า Intermission
+        function updateIntermissionOK(dt) {
+            const ring = document.getElementById('ok-progress-ring');
+            if (state.isOkGesture) {
+                state.okHoldTime += dt;
+                const ratio = Math.min(1, state.okHoldTime / 1.0);
+                ring.style.strokeDashoffset = 326.7 * (1 - ratio);
+                document.getElementById('ok-status-text').innerText = `กำลังชาร์จ ${Math.round(ratio * 100)}%`;
+                if (state.okHoldTime >= 1.0) {
+                    triggerReadyCountdown();
+                }
+            } else {
+                state.okHoldTime = Math.max(0, state.okHoldTime - dt * 1.5);
+                const ratio = state.okHoldTime / 1.0;
+                ring.style.strokeDashoffset = 326.7 * (1 - ratio);
+            }
+        }
+
+        // อัปเดตเวลานับถอยหลัง + กลไกทั้ง 3 ด่าน
+        function updatePlayingLogic(dt) {
+            state.timeLeft = Math.max(0, state.timeLeft - dt);
+            const pct = (state.timeLeft / state.maxTime) * 100;
+            document.getElementById('timer-bar').style.width = `${pct}%`;
+            document.getElementById('timer-text').innerText = `${state.timeLeft.toFixed(1)} วินาที`;
+
+            if (state.timeLeft <= 0) {
+                submitAnswer(false, true);
+                return;
+            }
+
+            const q = QUIZ_DATA[state.currentQIndex];
+
+            // --- ด่าน 1: Hover Fill 0.8 วินาที ---
+            if (q.stage === 1) {
+                const btnTrue = document.getElementById('s1-btn-true');
+                const btnFalse = document.getElementById('s1-btn-false');
+                const rT = btnTrue.getBoundingClientRect();
+                const rF = btnFalse.getBoundingClientRect();
+
+                const distT = Math.hypot(state.pointerX - (rT.left + rT.width / 2), state.pointerY - (rT.top + rT.height / 2));
+                const distF = Math.hypot(state.pointerX - (rF.left + rF.width / 2), state.pointerY - (rF.top + rF.height / 2));
+
+                let hovered = null;
+                if (distT <= rT.width / 2 + 10) hovered = 'true';
+                else if (distF <= rF.width / 2 + 10) hovered = 'false';
+
+                if (hovered) {
+                    if (state.s1HoverTarget === hovered) {
+                        state.s1HoverTime += dt;
+                    } else {
+                        state.s1HoverTarget = hovered;
+                        state.s1HoverTime = 0;
+                        SoundFX.hoverTick();
+                    }
+                    const fillRatio = Math.min(1, state.s1HoverTime / 0.8);
+                    document.getElementById('s1-ring-true').style.strokeDashoffset =
+                        hovered === 'true' ? 339.3 * (1 - fillRatio) : 339.3;
+                    document.getElementById('s1-ring-false').style.strokeDashoffset =
+                        hovered === 'false' ? 339.3 * (1 - fillRatio) : 339.3;
+
+                    btnTrue.style.transform = hovered === 'true' ? 'scale(1.08)' : 'scale(1)';
+                    btnFalse.style.transform = hovered === 'false' ? 'scale(1.08)' : 'scale(1)';
+
+                    if (state.s1HoverTime >= 0.8) {
+                        submitAnswer((hovered === 'true') === q.answer);
+                    }
+                } else {
+                    state.s1HoverTarget = null;
+                    state.s1HoverTime = 0;
+                    document.getElementById('s1-ring-true').style.strokeDashoffset = 339.3;
+                    document.getElementById('s1-ring-false').style.strokeDashoffset = 339.3;
+                    btnTrue.style.transform = 'scale(1)';
+                    btnFalse.style.transform = 'scale(1)';
+                }
+            }
+
+            // --- ด่าน 2: อัปเดตตำแหน่งการ์ดที่กำลังลาก (Delta Tracking) ---
+            else if (q.stage === 2 && state.s2DraggingCard) {
+                const c = state.s2DraggingCard;
+                c.x = state.pointerX - state.s2DragOffsetX;
+                c.y = state.pointerY - state.s2DragOffsetY;
+                c.el.style.left = `${c.x}px`;
+                c.el.style.top = `${c.y}px`;
+
+                const cx = c.x + c.w / 2;
+                const cy = c.y + c.h / 2;
+
+                if (q.mode === "single") {
+                    const dz = document.getElementById('s2-dropzone-single');
+                    const rect = dz.getBoundingClientRect();
+                    const over = cx >= rect.left - 25 && cx <= rect.right + 25 && cy >= rect.top - 25 && cy <= rect.bottom + 25;
+                    dz.classList.toggle('active-hover', over);
+                } else {
+                    for (let s = 0; s < 3; s++) {
+                        const slotEl = document.getElementById(`s2-chain-slot-${s}`);
+                        const rect = slotEl.getBoundingClientRect();
+                        const over = cx >= rect.left - 20 && cx <= rect.right + 20 && cy >= rect.top - 20 && cy <= rect.bottom + 20;
+                        slotEl.classList.toggle('active-hover', over);
+                    }
+                }
+            }
+
+            // --- ด่าน 3: การ์ดคำศัพท์ร่วงหล่น + ตรวจการชนกับพอยน์เตอร์ ---
+            else if (q.stage === 3) {
+                state.s3SpawnTimer += dt;
+                if (state.s3SpawnTimer >= 1.35) {
+                    state.s3SpawnTimer = 0;
+                    const hasCorrectOnScreen = state.s3FallingCards.some(c => c.isCorrect);
+                    spawnStage3Card(q, !hasCorrectOnScreen);
+                }
+
+                for (let i = state.s3FallingCards.length - 1; i >= 0; i--) {
+                    const c = state.s3FallingCards[i];
+                    c.y += c.speed * dt;
+                    c.el.style.top = `${c.y}px`;
+
+                    // ตรวจ Collision Detection กับพอยน์เตอร์มือหลัก (หรือเมาส์)
+                    const hit =
+                        state.pointerX >= c.x - 10 &&
+                        state.pointerX <= c.x + c.w + 10 &&
+                        state.pointerY >= c.y - 10 &&
+                        state.pointerY <= c.y + c.h + 10;
+
+                    if (hit && (state.useCamera || state.isPinching)) {
+                        submitAnswer(c.isCorrect);
+                        return;
+                    }
+
+                    // ลบการ์ดที่ตกพ้นขอบล่างหน้าจอ
+                    if (c.y > window.innerHeight + 40) {
+                        c.el.remove();
+                        state.s3FallingCards.splice(i, 1);
+                    }
+                }
+            }
+        }
+
+        // เริ่ม Animation Loop เมื่อโหลดหน้าเสร็จ
+        window.onload = function () {
+            selectQuestionSet(0);
+            state.lastFrameTime = performance.now();
+            requestAnimationFrame(mainLoop);
+        };
+    </script>
+</body>
+</html>
